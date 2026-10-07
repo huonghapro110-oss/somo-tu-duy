@@ -19,11 +19,3 @@
 
 ## v10: đồng bộ đám mây (tùy chọn)
 Xem `HUONG-DAN-DONG-BO.md` và `supabase-setup.sql`. Mở menu ☰ > Cài đặt đồng bộ.
-
-
-## V12 – Tối ưu giao diện
-- Bottom navigation 5 nhóm: Nút / Kiểu / Nền / Học / Thêm.
-- Giao diện mobile-first, thao tác một tay, nút lớn và cuộn trong từng bảng.
-- Quick actions nổi: thêm nhánh, hoàn tác, làm lại, zoom và Công cụ nâng cao.
-- Tối ưu desktop/tablet, landscape và safe-area cho Android/iPhone.
-- Giữ nguyên dữ liệu và các tính năng nâng cao của V11.
