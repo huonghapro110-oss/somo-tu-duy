@@ -320,7 +320,51 @@ body{font-size:14px}
 #dock.collapsed #dockToggle .dockToggleIcon{transform:rotate(180deg)}
 #fitAll{font-size:22px!important;font-weight:800!important}
 @media(min-width:700px){#dock.collapsed{width:min(900px,calc(100% - 24px));margin:0 auto 12px;border:1px solid var(--bd);border-radius:18px}}
-</style></head><body><div id="app"><div id="vp"><div id="bgi"></div><div id="world"><svg id="ed"></svg><div id="nd"></div></div><div class="zb"><button id="qa" aria-label="Thêm nhánh con">＋</button><button id="qu" aria-label="Hoàn tác">↶</button><button id="qr" aria-label="Làm lại">↷</button><button id="z1" aria-label="Phóng to">＋</button><button id="z2" aria-label="Thu nhỏ">－</button><button id="z3" aria-label="Chữ lớn hơn">A+</button><button id="z4" aria-label="Chữ nhỏ hơn">A−</button><button id="fitAll" aria-label="Xem toàn bộ sơ đồ" title="Xem toàn bộ sơ đồ">◎</button></div><div id="hint">Kéo nền để di chuyển · chụm hai ngón để thu phóng</div></div><div id="dock"><button id="dockToggle" type="button" aria-expanded="true" aria-controls="tabs pa pb pc pd pe"><span class="dockToggleIcon">⌄</span><span class="dockToggleText">Thu gọn bảng điều khiển · Xem toàn bộ sơ đồ</span></button><div id="tabs" role="tablist" aria-label="Công cụ chỉnh sửa"><button class="on" data-p="pa" role="tab">✦<span>Nút</span></button><button data-p="pb" role="tab">▣<span>Kiểu</span></button><button data-p="pc" role="tab">◉<span>Nền</span></button><button data-p="pd" role="tab">✓<span>Học</span></button><button data-p="pe" role="tab">•••<span>Thêm</span></button></div><div class="pane" id="pa"><input id="txt" class="wide" placeholder="Nội dung nút" aria-label="Nội dung nút"><button class="mic" id="mic1">🎤 Nói vào nút</button><button class="mic" id="mic2">🎤 Nói nhánh con</button><button class="mic wide" id="mic3">🎤 Nói cả đoạn → sơ đồ</button><div id="sws" class="wide"></div><button id="addc">＋ Nhánh con</button><button id="adds">＋ Cùng cấp</button><button id="del">Xóa nút</button><button id="lay">Sắp xếp lại</button><button id="ctr" class="wide">Căn giữa sơ đồ</button></div><div class="pane" id="pb" hidden><select id="fr" class="wide"><option value="pill">Khung: Viên thuốc</option><option value="box">Khung: Chữ nhật</option><option value="circle">Khung: Ảnh tròn</option><option value="polaroid">Khung: Polaroid</option><option value="frame">Khung: Tranh</option><option value="cover">Ảnh làm nền nút</option><option value="text">Chỉ chữ</option><option value="proc">Hộp (lưu đồ)</option><option value="dec">Hình thoi (quyết định)</option><option value="term">Bầu dục (bắt đầu/kết thúc)</option></select><label class="b">Chèn ảnh vào nút<input type="file" id="fin" accept="image/*" hidden></label><button id="rmi">Bỏ ảnh nút</button><button id="kb1">Khung to hơn</button><button id="kb2">Khung nhỏ hơn</button></div><div class="pane" id="pc" hidden><label class="b wide">Chọn ảnh nền<input type="file" id="fbg" accept="image/*" hidden></label><label class="wide">Độ đậm ảnh nền <input type="range" id="op" min="0.1" max="1" step="0.05"></label><button id="rmb" class="wide">Bỏ ảnh nền</button></div><div class="pane" id="pd" hidden><button id="undo">Hoàn tác</button><button id="redo">Làm lại</button><button id="col">Thu gọn / mở nhánh</button><button id="quiz">Chế độ ôn tập</button><select id="em" class="wide"><option value="">Biểu tượng cho nút…</option><option value="⭐">⭐</option><option value="❗">❗</option><option value="✅">✅</option><option value="💡">💡</option><option value="❓">❓</option><option value="📌">📌</option><option value="❤️">❤️</option><option value="⚠️">⚠️</option><option value="🔥">🔥</option><option value="🎯">🎯</option><option value="📚">📚</option><option value="🧠">🧠</option><option value="🚀">🚀</option><option value="💬">💬</option><option value="📅">📅</option><option value="💰">💰</option><option value="🌱">🌱</option><option value="🏁">🏁</option><option value="👍">👍</option><option value="🎨">🎨</option><option value="x">Bỏ biểu tượng</option></select><select id="th" class="wide"><option value="">Đổi bảng màu…</option><option>Rừng xanh</option><option>Biển</option><option>Hoàng hôn</option><option>Giấy mực</option></select><select id="tp" class="wide"><option value="">Tạo từ mẫu…</option><option>Sơ đồ trống</option><option>Kế hoạch dự án</option><option>Ôn thi</option><option>SWOT</option></select><button id="exj">Lưu file .json</button><label class="b">Mở file .json<input type="file" id="fjs" accept=".json,application/json" hidden></label><button id="exp" class="wide">Xuất ảnh PNG</button></div><div class="pane" id="pe" hidden><button id="imp">⭐ Quan trọng</button><button id="dn">✅ Hoàn thành</button><button id="lk">🔒 Khóa nút</button><button id="dup">Nhân bản nhánh</button><button id="cp">Sao chép nhánh</button><button id="ps">Dán nhánh</button><input id="sq" class="wide" placeholder="Tìm nút…" aria-label="Tìm nút"><button id="sqn" class="wide">Tìm tiếp</button><button id="ol">Dàn ý, nhập văn bản</button><button id="td">Việc cần làm</button><button id="ln" class="wide">Ôn tập thông minh</button></div></div></div><script>
+
+/* V16 FIX: real scroll container, desktop sizing and mobile touch scrolling */
+html,body{width:100%;max-width:100%;overflow:hidden}
+#app{min-width:0;min-height:0;width:100%;max-width:100%;overflow:hidden}
+#vp{min-width:0;min-height:0;flex:1 1 auto}
+#dock{box-sizing:border-box;min-width:0;min-height:0;max-width:100%;flex:0 0 auto;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin}
+#dock>.pane{min-width:0;max-width:100%;box-sizing:border-box}
+#dock button,#dock input,#dock select,#dock textarea{max-width:100%;box-sizing:border-box}
+@media(min-width:900px){
+ #app{flex-direction:row}
+ #vp{flex:1 1 auto;width:auto;min-width:0}
+ #dock{flex:0 0 clamp(340px,40vw,440px);width:clamp(340px,40vw,440px);height:100%;max-height:100%!important;margin:0;border-radius:0;border-top:0;border-left:1px solid var(--bd);overflow-x:hidden!important;overflow-y:auto!important}
+ #dock>.pane{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #dock.collapsed{flex:0 0 auto;width:auto;height:auto;max-height:none!important;overflow:hidden!important}
+}
+@media(max-width:899px){
+ #app{flex-direction:column}
+ #dock{width:100%;max-height:56dvh!important;overflow-x:hidden!important;overflow-y:auto!important;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px)}
+ #dock>.pane{max-height:none!important;overflow:visible}
+}
+@media(max-width:430px){#dock{max-height:58dvh!important}#dock>.pane{grid-template-columns:repeat(2,minmax(0,1fr))}}
+#readPanel{overscroll-behavior:contain}
+#readCard{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-width:100%;width:min(760px,100%)}
+#readText{display:block;max-width:100%;min-height:28dvh;max-height:42dvh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+#readCurrent{overflow-wrap:anywhere}
+#readControls button:disabled{opacity:.5;cursor:not-allowed}
+
+</style></head><body><div id="app"><div id="vp"><div id="bgi"></div><div id="world"><svg id="ed"></svg><div id="nd"></div></div><div class="zb"><button id="qa" aria-label="Thêm nhánh con">＋</button><button id="qu" aria-label="Hoàn tác">↶</button><button id="qr" aria-label="Làm lại">↷</button><button id="z1" aria-label="Phóng to">＋</button><button id="z2" aria-label="Thu nhỏ">－</button><button id="z3" aria-label="Chữ lớn hơn">A+</button><button id="z4" aria-label="Chữ nhỏ hơn">A−</button><button id="fitAll" aria-label="Xem toàn bộ sơ đồ" title="Xem toàn bộ sơ đồ">◎</button></div><div id="hint">Kéo nền để di chuyển · chụm hai ngón để thu phóng</div></div><div id="dock"><button id="dockToggle" type="button" aria-expanded="true" aria-controls="tabs pa pb pc pd pe"><span class="dockToggleIcon">⌄</span><span class="dockToggleText">Thu gọn bảng điều khiển · Xem toàn bộ sơ đồ</span></button><div id="tabs" role="tablist" aria-label="Công cụ chỉnh sửa"><button class="on" data-p="pa" role="tab">✦<span>Nút</span></button><button data-p="pb" role="tab">▣<span>Kiểu</span></button><button data-p="pc" role="tab">◉<span>Nền</span></button><button data-p="pd" role="tab">✓<span>Học</span></button><button data-p="pe" role="tab">•••<span>Thêm</span></button></div><div class="pane" id="pa"><input id="txt" class="wide" placeholder="Nội dung nút" aria-label="Nội dung nút"><button class="mic" id="mic1">🎤 Nói vào nút</button><button class="mic" id="mic2">🎤 Nói nhánh con</button><button class="mic wide" id="mic3">🎤 Nói cả đoạn → sơ đồ</button><div id="sws" class="wide"></div><button id="addc">＋ Nhánh con</button><button id="adds">＋ Cùng cấp</button><button id="del">Xóa nút</button><button id="lay">Sắp xếp lại</button><button id="ctr" class="wide">Căn giữa sơ đồ</button></div><div class="pane" id="pb" hidden><select id="fr" class="wide"><option value="pill">Khung: Viên thuốc</option><option value="box">Khung: Chữ nhật</option><option value="circle">Khung: Ảnh tròn</option><option value="polaroid">Khung: Polaroid</option><option value="frame">Khung: Tranh</option><option value="cover">Ảnh làm nền nút</option><option value="text">Chỉ chữ</option><option value="proc">Hộp (lưu đồ)</option><option value="dec">Hình thoi (quyết định)</option><option value="term">Bầu dục (bắt đầu/kết thúc)</option></select><label class="b">Chèn ảnh vào nút<input type="file" id="fin" accept="image/*" hidden></label><button id="rmi">Bỏ ảnh nút</button><button id="kb1">Khung to hơn</button><button id="kb2">Khung nhỏ hơn</button></div><div class="pane" id="pc" hidden><label class="b wide">Chọn ảnh nền<input type="file" id="fbg" accept="image/*" hidden></label><label class="wide">Độ đậm ảnh nền <input type="range" id="op" min="0.1" max="1" step="0.05"></label><button id="rmb" class="wide">Bỏ ảnh nền</button></div><div class="pane" id="pd" hidden><button id="undo">Hoàn tác</button><button id="redo">Làm lại</button><button id="col">Thu gọn / mở nhánh</button><button id="quiz">Chế độ ôn tập</button><select id="em" class="wide"><option value="">Biểu tượng cho nút…</option><option value="⭐">⭐</option><option value="❗">❗</option><option value="✅">✅</option><option value="💡">💡</option><option value="❓">❓</option><option value="📌">📌</option><option value="❤️">❤️</option><option value="⚠️">⚠️</option><option value="🔥">🔥</option><option value="🎯">🎯</option><option value="📚">📚</option><option value="🧠">🧠</option><option value="🚀">🚀</option><option value="💬">💬</option><option value="📅">📅</option><option value="💰">💰</option><option value="🌱">🌱</option><option value="🏁">🏁</option><option value="👍">👍</option><option value="🎨">🎨</option><option value="x">Bỏ biểu tượng</option></select><select id="th" class="wide"><option value="">Đổi bảng màu…</option><option>Rừng xanh</option><option>Biển</option><option>Hoàng hôn</option><option>Giấy mực</option></select><select id="tp" class="wide"><option value="">Tạo từ mẫu…</option><option>Sơ đồ trống</option><option>Kế hoạch dự án</option><option>Ôn thi</option><option>SWOT</option></select><button id="exj">Lưu file .json</button><label class="b">Mở file .json<input type="file" id="fjs" accept=".json,application/json" hidden></label><button id="exp" class="wide">Xuất ảnh PNG</button></div><div class="pane" id="pe" hidden><button id="imp">⭐ Quan trọng</button><button id="dn">✅ Hoàn thành</button><button id="lk">🔒 Khóa nút</button><button id="dup">Nhân bản nhánh</button><button id="cp">Sao chép nhánh</button><button id="ps">Dán nhánh</button><input id="sq" class="wide" placeholder="Tìm nút…" aria-label="Tìm nút"><button id="sqn" class="wide">Tìm tiếp</button><button id="ol">Dàn ý, nhập văn bản</button><button id="td">Việc cần làm</button><button id="ln" class="wide">Ôn tập thông minh</button></div></div></div><button id="readFab" type="button">🔊 Đọc / 🎙 Ghi văn bản</button>
+<div id="readPanel" aria-modal="true" role="dialog" aria-label="Đọc và ghi văn bản">
+ <section id="readCard">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h2>🔊 Đọc & 🎙 Ghi giọng nói thành văn bản</h2><button id="readClose" type="button">Đóng ✕</button></div>
+  <p class="readHelp">Dán hoặc nhập Kinh Thánh để nghe đọc. Hoặc bấm Ghi âm để nói, lời nhận dạng sẽ nối tiếp vào ô văn bản. Nội dung không tự xóa khi dừng hay đọc lại.</p>
+  <textarea id="readText" placeholder="Dán hoặc nhập đoạn Kinh Thánh tại đây…"></textarea>
+  <div class="readHelp" style="margin-top:8px">Đang đọc:</div><div id="readCurrent" aria-live="polite">Chưa bắt đầu.</div>
+  <label for="readRate">Tốc độ đọc: <strong id="readRateVal">1.0×</strong></label><input id="readRate" type="range" min="0.7" max="1.3" step="0.1" value="1">
+  <div id="readControls">
+   <button id="readStart" type="button">▶ Đọc từ đầu</button><button id="readResume" type="button">⏵ Đọc tiếp</button>
+   <button id="readPause" type="button">⏸ Tạm dừng</button><button id="readStop" type="button">⏹ Dừng đọc</button>
+   <button id="dictStart" type="button">🎙 Bắt đầu ghi lời nói</button><button id="dictStop" type="button" disabled>■ Dừng ghi</button>
+   <button id="dictClear" type="button">Xóa bản ghi mới</button><button id="readCopy" type="button">Sao chép văn bản</button>
+  </div>
+  <div id="readStatus" role="status" aria-live="polite">Sẵn sàng. Cho phép trình duyệt sử dụng micro khi được hỏi.</div>
+ </section>
+</div>
+<script>
 const $=s=>document.querySelector(s),vp=$('#vp'),world=$('#world'),nd=$('#nd'),ed=$('#ed'),txt=$('#txt'),fr=$('#fr');
 const COL=['#2f7f6f','#d1495b','#edae49','#3d5a80','#7b4fa3','#e07a3f'];let KEY='somo-tu-duy-android';
 window.__enc=false;try{window.__enc=localStorage.getItem('somo-enc')==='1';const c=localStorage.getItem('somo-cur'),L=JSON.parse(localStorage.getItem('somo-lib')||'[]'),m=L.find(x=>x.id===c);if(m)KEY=m.key}catch(e){}
@@ -976,7 +1020,7 @@ if(syn().auto)setTimeout(()=>syncAll(true),2500);
  let parts=[],index=0,playing=false,paused=false,runId=0,recognition=null,dictating=false,dictBase='';
  const setStatus=t=>status.textContent=t;
  const supported=('speechSynthesis' in window)&&!!window.SpeechSynthesisUtterance;
- function splitLongSentence(sentence,limit=180){let out=[],buf='';const words=sentence.split(/(\s+)/);for(const w of words){if((buf+w).length>limit&&buf.trim()){out.push(buf.trim());buf=''}buf+=w}if(buf.trim())out.push(buf.trim());return out}
+ function splitLongSentence(sentence,limit=150){let out=[],buf='';const words=sentence.split(/(\s+)/);for(const w of words){if((buf+w).length>limit&&buf.trim()){out.push(buf.trim());buf=''}buf+=w}if(buf.trim())out.push(buf.trim());return out}
  function makeParts(text){
   const blocks=text.replace(/\r\n?/g,'\n').split(/\n\s*\n/);let out=[];
   for(const block of blocks){const t=block.trim();if(!t)continue;
@@ -987,20 +1031,26 @@ if(syn().auto)setTimeout(()=>syncAll(true),2500);
  }
  function speakNext(id){
   if(id!==runId||!playing||paused)return;
-  if(index>=parts.length){playing=false;setStatus('Đã đọc hết '+parts.length+' đoạn. Văn bản gốc vẫn được giữ nguyên.');current.textContent='Hoàn tất.';return}
+  if(index>=parts.length){playing=false;setStatus('Đã đọc hết '+parts.length+' đoạn. Văn bản gốc và dấu câu vẫn được giữ nguyên.');current.textContent='Hoàn tất.';return}
   const part=parts[index],u=new SpeechSynthesisUtterance(part);u.lang='vi-VN';u.rate=Number(rate.value);u.pitch=1;
-  current.textContent=part;setStatus('Đang đọc đoạn '+(index+1)+' / '+parts.length+' · Dấu câu được giữ theo văn bản.');
-  let advanced=false;const next=()=>{if(advanced||id!==runId)return;advanced=true;index++;if(playing&&!paused)setTimeout(()=>speakNext(id),180)};
-  u.onend=next;u.onerror=e=>{if(id!==runId)return;if(e.error==='canceled'||e.error==='interrupted')return;setStatus('Thiết bị gặp lỗi ở đoạn '+(index+1)+'. Đang thử chuyển sang đoạn kế tiếp.');next()};
-  // Android speech engines can stall on a large queue; one utterance at a time is more reliable.
+  try{const vs=speechSynthesis.getVoices();const vi=vs.find(v=>/^vi([-_]|$)/i.test(v.lang));if(vi)u.voice=vi;}catch(_){}
+  current.textContent=part;setStatus('Đang đọc đoạn '+(index+1)+' / '+parts.length+'. Dấu câu vẫn hiển thị trong văn bản.');
+  let advanced=false,watchdog=null;const next=()=>{if(advanced||id!==runId)return;advanced=true;if(watchdog)clearTimeout(watchdog);index++;if(playing&&!paused)setTimeout(()=>speakNext(id),220)};
+  u.onstart=()=>setStatus('Đang phát giọng đọc tiếng Việt · đoạn '+(index+1)+' / '+parts.length+'.');
+  u.onend=next;
+  u.onerror=e=>{if(id!==runId)return;if(e.error==='canceled'||e.error==='interrupted')return;setStatus('Bộ đọc gặp lỗi ('+e.error+'). Đang chuyển sang đoạn kế tiếp; văn bản không bị xóa.');next()};
+  // Recover if a mobile speech engine gets stuck without firing onend.
+  watchdog=setTimeout(()=>{if(!advanced&&id===runId){setStatus('Thiết bị ngắt đoạn đọc. Đang thử tiếp tục từ đoạn kế tiếp; văn bản vẫn được giữ.');try{speechSynthesis.cancel()}catch(_){}next()}},35000);
   speechSynthesis.speak(u);
  }
- function start(){const original=input.value;if(!original.trim()){setStatus('Hãy dán hoặc nhập văn bản trước khi đọc.');return}if(!supported){setStatus('Trình duyệt chưa hỗ trợ đọc thành tiếng. Hãy thử Chrome.');return}speechSynthesis.cancel();runId++;parts=makeParts(original);index=0;playing=true;paused=false;setStatus('Đã chia văn bản thành '+parts.length+' đoạn nhỏ. Bắt đầu đọc…');setTimeout(()=>speakNext(runId),120)}
+ function start(){const original=input.value;if(!original.trim()){setStatus('Hãy dán hoặc nhập văn bản trước khi đọc.');input.focus();return}if(!supported){setStatus('Trình duyệt không hỗ trợ đọc thành tiếng. Hãy thử Chrome/Edge và bật dịch vụ chuyển văn bản thành giọng nói tiếng Việt trên thiết bị.');return}
+  runId++;const id=runId;try{speechSynthesis.cancel();speechSynthesis.resume()}catch(_){}parts=makeParts(original);index=0;playing=true;paused=false;current.textContent=parts[0]||'';setStatus('Đã chia thành '+parts.length+' đoạn ngắn. Đang khởi động giọng đọc…');setTimeout(()=>{if(id===runId)speakNext(id)},100)
+ }
  $r('readFab').addEventListener('click',()=>{panel.classList.add('open');if(!input.value.trim()){const active=document.activeElement;if(active&&typeof active.value==='string'&&active.value.trim())input.value=active.value}});
- $r('readClose').addEventListener('click',()=>panel.classList.remove('open'));panel.addEventListener('click',e=>{if(e.target===panel)panel.classList.remove('open')});
+ $r('readClose').addEventListener('click',()=>{panel.classList.remove('open');});panel.addEventListener('click',e=>{if(e.target===panel)panel.classList.remove('open')});
  $r('readStart').addEventListener('click',start);
- $r('readPause').addEventListener('click',()=>{if(supported&&speechSynthesis.speaking&&!speechSynthesis.paused){speechSynthesis.pause();paused=true;setStatus('Đã tạm dừng. Văn bản không bị xóa. Bấm Đọc tiếp để tiếp tục.')}});
- $r('readResume').addEventListener('click',()=>{if(!supported)return;if(speechSynthesis.paused){speechSynthesis.resume();paused=false;setStatus('Đang tiếp tục đọc…')}else if(parts.length&&index<parts.length&&!playing){playing=true;paused=false;speakNext(runId)}});
+ $r('readPause').addEventListener('click',()=>{if(supported&&playing){try{speechSynthesis.pause()}catch(_){}paused=true;setStatus('Đã tạm dừng tại đoạn '+Math.min(index+1,parts.length)+'. Văn bản không bị xóa. Bấm Đọc tiếp.')}});
+ $r('readResume').addEventListener('click',()=>{if(!supported)return;if(!parts.length){start();return}if(index>=parts.length){start();return}paused=false;playing=true;try{speechSynthesis.resume()}catch(_){}setStatus('Đang tiếp tục đọc…');if(!speechSynthesis.speaking&&!speechSynthesis.pending)speakNext(runId)});
  $r('readStop').addEventListener('click',()=>{runId++;if(supported)speechSynthesis.cancel();playing=false;paused=false;setStatus('Đã dừng đọc. Nội dung vẫn nằm nguyên trong ô văn bản. Có thể bấm Đọc từ đầu bất cứ lúc nào.');current.textContent='Đã dừng tại đoạn '+Math.min(index+1,parts.length)+' / '+parts.length+'.'});
  rate.addEventListener('input',()=>{$r('readRateVal').textContent=Number(rate.value).toFixed(1)+'×'});
  // SpeechRecognition is browser-provided dictation (not an audio file recorder). Final results append; they never replace prior text.
@@ -1027,22 +1077,6 @@ if(syn().auto)setTimeout(()=>syncAll(true),2500);
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing&&!paused){/* Browser may suspend speech in background; source text and position remain in memory. */}});
 })();
 </script>
-<button id="readFab" type="button">🔊 Đọc / 🎙 Ghi văn bản</button>
-<div id="readPanel" aria-modal="true" role="dialog" aria-label="Đọc và ghi văn bản">
- <section id="readCard">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h2>🔊 Đọc & 🎙 Ghi giọng nói thành văn bản</h2><button id="readClose" type="button">Đóng ✕</button></div>
-  <p class="readHelp">Dán hoặc nhập Kinh Thánh để nghe đọc. Hoặc bấm Ghi âm để nói, lời nhận dạng sẽ nối tiếp vào ô văn bản. Nội dung không tự xóa khi dừng hay đọc lại.</p>
-  <textarea id="readText" placeholder="Dán hoặc nhập đoạn Kinh Thánh tại đây…"></textarea>
-  <div class="readHelp" style="margin-top:8px">Đang đọc:</div><div id="readCurrent" aria-live="polite">Chưa bắt đầu.</div>
-  <label for="readRate">Tốc độ đọc: <strong id="readRateVal">1.0×</strong></label><input id="readRate" type="range" min="0.7" max="1.3" step="0.1" value="1">
-  <div id="readControls">
-   <button id="readStart" type="button">▶ Đọc từ đầu</button><button id="readResume" type="button">⏵ Đọc tiếp</button>
-   <button id="readPause" type="button">⏸ Tạm dừng</button><button id="readStop" type="button">⏹ Dừng đọc</button>
-   <button id="dictStart" type="button">🎙 Bắt đầu ghi lời nói</button><button id="dictStop" type="button" disabled>■ Dừng ghi</button>
-   <button id="dictClear" type="button">Xóa bản ghi mới</button><button id="readCopy" type="button">Sao chép văn bản</button>
-  </div>
-  <div id="readStatus" role="status" aria-live="polite">Sẵn sàng. Cho phép trình duyệt sử dụng micro khi được hỏi.</div>
- </section>
-</div>
+
 
 </body></html>
