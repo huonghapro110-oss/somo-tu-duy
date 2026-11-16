@@ -351,7 +351,12 @@ html,body{width:100%;max-width:100%;overflow:hidden}
 <div id="readPanel" aria-modal="true" role="dialog" aria-label="Đọc và ghi văn bản">
  <section id="readCard">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h2>🔊 Đọc & 🎙 Ghi giọng nói thành văn bản</h2><button id="readClose" type="button">Đóng ✕</button></div>
-  <p class="readHelp">Dán hoặc nhập Kinh Thánh để nghe đọc. Hoặc bấm Ghi âm để nói, lời nhận dạng sẽ nối tiếp vào ô văn bản. Nội dung không tự xóa khi dừng hay đọc lại.</p>
+  <p class="readHelp">Bạn tự tạo và nhập các mục cha, mục con trên sơ đồ. Hai nút bên dưới sẽ đọc trực tiếp nội dung Minimap, không tạo sẵn chủ đề và không sửa ô văn bản của bạn.</p>
+  <div id="mapReadControls" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0">
+   <button id="mapReadAll" type="button">🔊 Đọc toàn bộ Minimap</button>
+   <button id="mapReadSelected" type="button">🎧 Đọc mục đang chọn + nhánh con</button>
+  </div>
+  <p class="readHelp">Hoặc dán/nhập văn bản riêng để nghe đọc và dùng chức năng ghi giọng nói thành văn bản:</p>
   <textarea id="readText" placeholder="Dán hoặc nhập đoạn Kinh Thánh tại đây…"></textarea>
   <div class="readHelp" style="margin-top:8px">Đang đọc:</div><div id="readCurrent" aria-live="polite">Chưa bắt đầu.</div>
   <label for="readRate">Tốc độ đọc: <strong id="readRateVal">1.0×</strong></label><input id="readRate" type="range" min="0.7" max="1.3" step="0.1" value="1">
@@ -370,10 +375,7 @@ const COL=['#2f7f6f','#d1495b','#edae49','#3d5a80','#7b4fa3','#e07a3f'];let KEY=
 window.__enc=false;try{window.__enc=localStorage.getItem('somo-enc')==='1';const c=localStorage.getItem('somo-cur'),L=JSON.parse(localStorage.getItem('somo-lib')||'[]'),m=L.find(x=>x.id===c);if(m)KEY=m.key}catch(e){}
 window.__encLock=window.__enc;let S=null;if(!window.__enc)try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.nodes||!S.nodes.length)S={nodes:[
-{id:1,p:null,x:0,y:0,t:'Chủ đề chính',c:COL[0],f:'pill'},
-{id:2,p:1,x:0,y:0,t:'Ý chính 1',c:COL[1],f:'pill'},
-{id:3,p:1,x:0,y:0,t:'Ý chính 2',c:COL[2],f:'pill'},
-{id:4,p:1,x:0,y:0,t:'Ý chính 3',c:COL[3],f:'pill'}],bg:null,op:.5,v:null,seeded:1};
+{id:1,p:null,x:0,y:0,t:'Chủ đề chính (bấm để tự nhập)',c:COL[0],f:'pill'}],bg:null,op:.5,v:null,seeded:1};
 let nid=Math.max(...S.nodes.map(n=>n.id)),sel=S.nodes[0].id,drag=null;
 const byId=id=>S.nodes.find(n=>n.id===id);
 function save(){if(window.__encLock)return;try{persist(KEY,JSON.stringify(S))}catch(e){$('#hint').textContent='Bộ nhớ trình duyệt đầy: ảnh quá nặng sẽ không được lưu lại.'}}
@@ -1043,9 +1045,20 @@ if(syn().auto)setTimeout(()=>syncAll(true),2500);
   watchdog=setTimeout(()=>{if(!advanced&&id===runId){setStatus('Thiết bị ngắt đoạn đọc. Đang thử tiếp tục từ đoạn kế tiếp; văn bản vẫn được giữ.');try{speechSynthesis.cancel()}catch(_){}next()}},35000);
   speechSynthesis.speak(u);
  }
- function start(){const original=input.value;if(!original.trim()){setStatus('Hãy dán hoặc nhập văn bản trước khi đọc.');input.focus();return}if(!supported){setStatus('Trình duyệt không hỗ trợ đọc thành tiếng. Hãy thử Chrome/Edge và bật dịch vụ chuyển văn bản thành giọng nói tiếng Việt trên thiết bị.');return}
-  runId++;const id=runId;try{speechSynthesis.cancel();speechSynthesis.resume()}catch(_){}parts=makeParts(original);index=0;playing=true;paused=false;current.textContent=parts[0]||'';setStatus('Đã chia thành '+parts.length+' đoạn ngắn. Đang khởi động giọng đọc…');setTimeout(()=>{if(id===runId)speakNext(id)},100)
+ function startContent(original, label){if(!original||!original.trim()){setStatus('Không có nội dung để đọc. Hãy nhập nội dung vào các nút Minimap trước.');return}if(!supported){setStatus('Trình duyệt không hỗ trợ đọc thành tiếng. Hãy thử Chrome/Edge và bật dịch vụ chuyển văn bản thành giọng nói tiếng Việt trên thiết bị.');return}
+  runId++;const id=runId;try{speechSynthesis.cancel();speechSynthesis.resume()}catch(_){}parts=makeParts(original);index=0;playing=true;paused=false;current.textContent=parts[0]||'';setStatus(label+' · Đã chia thành '+parts.length+' đoạn ngắn. Đang khởi động giọng đọc…');setTimeout(()=>{if(id===runId)speakNext(id)},100)
  }
+ function start(){const original=input.value;if(!original.trim()){setStatus('Hãy dán hoặc nhập văn bản trước khi đọc.');input.focus();return}startContent(original,'Đọc văn bản trong ô nhập')}
+ function mapText(selectedOnly){
+  const root=selectedOnly?byId(sel):null;
+  if(selectedOnly&&!root){setStatus('Bạn chưa chọn mục nào trên Minimap.');return ''}
+  const out=[];
+  function walk(n,depth){const title=(n.t||'').trim();if(title)out.push((depth?(' '.repeat(Math.min(depth,6)*2)):'')+title);S.nodes.filter(x=>x.p===n.id).forEach(ch=>walk(ch,depth+1));}
+  if(selectedOnly)walk(root,0);else S.nodes.filter(n=>n.p==null).forEach(n=>walk(n,0));
+  return out.join('. ');
+ }
+ $r('mapReadAll').addEventListener('click',()=>{const text=mapText(false);if(text)startContent(text,'Đang đọc toàn bộ Minimap')});
+ $r('mapReadSelected').addEventListener('click',()=>{const text=mapText(true);if(text)startContent(text,'Đang đọc mục đã chọn và các nhánh con')});
  $r('readFab').addEventListener('click',()=>{panel.classList.add('open');if(!input.value.trim()){const active=document.activeElement;if(active&&typeof active.value==='string'&&active.value.trim())input.value=active.value}});
  $r('readClose').addEventListener('click',()=>{panel.classList.remove('open');});panel.addEventListener('click',e=>{if(e.target===panel)panel.classList.remove('open')});
  $r('readStart').addEventListener('click',start);
