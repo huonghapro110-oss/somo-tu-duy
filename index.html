@@ -1039,6 +1039,16 @@ const go=async k=>{save2();try{const ok=await sauth(k,$('#sy3').value.trim(),$('
 $('#syGoogle').onclick=async()=>{save2();try{await googleLogin()}catch(e){$('#syst').textContent=e.message}};
 $('#sy5').onclick=()=>go('in');$('#sy6').onclick=()=>go('up');$('#sy7').onclick=()=>{const d=syn();delete d.token;delete d.refresh;delete d.uid;synSet(d);st()};$('#sy8').onchange=save2;$('#sy9').onclick=()=>{save2();pn.classList.remove('on');syncAll()}}
 Object.assign(ACT,{synS:synPanel,synN:()=>syncAll()});
+/* V19: đặt lối vào đăng nhập/đồng bộ ngay trên màn hình chính, không phải tìm trong menu dài. */
+(()=>{
+ const z=document.querySelector('.zb');
+ if(!z||document.getElementById('cloudSyncBtn'))return;
+ const b=document.createElement('button');b.id='cloudSyncBtn';b.type='button';
+ b.textContent='☁ Đăng nhập';b.title='Đăng nhập Google / cài đặt đồng bộ đám mây';
+ b.setAttribute('aria-label','Đăng nhập Google và cài đặt đồng bộ đám mây');
+ b.style.cssText='width:auto;min-width:46px;padding:0 11px;border-radius:24px;font-size:12px;white-space:nowrap;background:#2f7f6f;color:#fff;border-color:#2f7f6f';
+ b.addEventListener('click',()=>synPanel());z.prepend(b);
+})();
 finishGoogleLogin();
 if(syn().auto)setTimeout(()=>syncAll(true),2500);
 
