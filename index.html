@@ -366,6 +366,9 @@ html,body{width:100%;max-width:100%;overflow:hidden}
    <button id="dictStart" type="button">🎙 Bắt đầu ghi lời nói</button><button id="dictStop" type="button" disabled>■ Dừng ghi</button>
    <button id="dictClear" type="button">Xóa bản ghi mới</button><button id="readCopy" type="button">Sao chép văn bản</button>
   </div>
+  <div style="margin:8px 0"><button id="vocabBtn" type="button">📖 Từ điển sửa lỗi giọng nói</button></div>
+  <div id="vocabBox" style="display:none;margin:6px 0"><div class="readHelp">Mỗi dòng: <b>chữ nghe sai = chữ đúng</b>. Ví dụ: gia cốp = Gia-cốp</div><textarea id="vocabText" rows="5" placeholder="gia cốp = Gia-cốp" style="width:100%;box-sizing:border-box;min-height:90px;border:1px solid #526b61;border-radius:12px;background:#121b18;color:inherit;padding:10px;font:inherit"></textarea></div>
+  <p class="readHelp">Khi ghi, có thể nói: “dấu chấm”, “dấu phẩy”, “dấu hai chấm”, “dấu chấm hỏi”, “xuống dòng” để chèn dấu. Đầu câu tự viết hoa.</p>
   <div id="readStatus" role="status" aria-live="polite">Sẵn sàng. Cho phép trình duyệt sử dụng micro khi được hỏi.</div>
  </section>
 </div>
@@ -450,17 +453,92 @@ if(n.col){const k=S.nodes.filter(x=>x.p===n.id).length;if(k){const b=document.cr
 const setc=(n,c)=>{n.c=c;S.nodes.filter(k=>k.p===n.id).forEach(k=>setc(k,c))};
 function mk(p,t){const P=byId(p),c=S.nodes.filter(n=>n.p===p).length,n={id:++nid,p,x:P.x+300,y:P.y+c*95,t:t||'Ý mới',c:COL[S.nodes.length%COL.length],f:'pill'};S.nodes.push(n);render();pick(sel);save();return n}
 /* giọng nói */
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null;
+/* ===== V22: giọng nói – bộ nhận dạng dùng chung =====
+   - Tự nối lại khi trình duyệt ngắt giữa chừng (im lặng, hết phiên, lỗi mạng thoáng qua)
+   - Chỉ NỐI THÊM vào văn bản, không bao giờ ghi đè lại từ đầu
+   - Chống lặp (Chrome Android hay trả lại cả câu cũ), giữ chữ đang nghe dở khi bị ngắt
+   - Hiểu "dấu chấm / dấu phẩy / dấu hai chấm / dấu chấm hỏi / xuống dòng" và từ điển sửa lỗi */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,curV=null;
+const VK='somo-vocab';
+function vocabGet(){try{return localStorage.getItem(VK)||''}catch(_){return''}}
+let vocabC={raw:null,list:[]};
+function vocabList(){const raw=vocabGet();if(raw===vocabC.raw)return vocabC.list;
+ const list=raw.split('\n').map(l=>l.split('=')).filter(a=>a.length>=2&&a[0].trim()).map(a=>{
+  const f=a[0].trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+  try{return[new RegExp('(?<![\\p{L}\\p{N}])'+f+'(?![\\p{L}\\p{N}])','giu'),a.slice(1).join('=').trim()]}catch(_){return null}}).filter(Boolean);
+ vocabC={raw,list};return list}
+const SPOKEN=[[/dấu\s+chấm\s+hỏi/giu,'?'],[/dấu\s+chấm\s+(?:than|cảm)/giu,'!'],[/dấu\s+hai\s+chấm/giu,':'],[/dấu\s+chấm\s+phẩy/giu,';'],[/dấu\s+ba\s+chấm/giu,'…'],[/dấu\s+chấm/giu,'.'],[/dấu\s+phẩy/giu,','],[/mở\s+ngoặc/giu,'('],[/đóng\s+ngoặc/giu,')'],[/(?:xuống\s+dòng|dòng\s+mới|xuống\s+hàng)/giu,'\n']];
+function vfix(t){let s=String(t||'').trim();
+ for(const [re,r] of SPOKEN)s=s.replace(re,' '+r+' ');
+ for(const [re,v] of vocabList())s=s.replace(re,()=>v);
+ return s.replace(/[ \t]+([,.;:!?…)])/g,'$1').replace(/\([ \t]+/g,'(').replace(/[ \t]*\n[ \t]*/g,'\n').replace(/([,.;:!?])(?=\p{L})/gu,'$1 ').replace(/[ \t]{2,}/g,' ').replace(/^[ \t]+|[ \t]+$/g,'')}
+const vcap=s=>s.replace(/^[^\p{L}\p{N}]*\p{L}/u,m=>m.slice(0,-1)+m.slice(-1).toUpperCase());
+function vjoin(out,p){if(!p)return out;
+ if(!out)return vcap(p.replace(/^\s+/,''));
+ const endSent=/[.!?…]\s*$|\n\s*$/.test(out);
+ if(/^\n/.test(p))return out.replace(/[ \t]+$/,'')+p;
+ if(/^[,.;:!?…)]/.test(p))return out.replace(/\s+$/,'')+p;
+ return out.replace(/[ \t]+$/,'')+(/\n$/.test(out)?'':' ')+(endSent?vcap(p):p)}
+const vnorm=s=>String(s).toLowerCase().replace(/[.,;:!?…"'()]/g,'').replace(/\s+/g,' ').trim();
+function makeVoice(o){
+ let r=null,want=false,segs=[],pend='',fast=0,t0=0,tm=null,netErr=0,lastAct=0,lastC=0,got=false;
+ const say=(s,m)=>{try{o.onState&&o.onState(s,m)}catch(_){}};
+ function commit(tx){tx=String(tx||'').trim();if(!tx)return;const n=vnorm(tx);if(!n)return;
+  const last=segs[segs.length-1],ln=last?vnorm(last):'',near=Date.now()-lastC<6000;
+  if(ln&&near){
+   if(n===ln)return;
+   if(n.startsWith(ln+' ')){segs[segs.length-1]=tx;lastC=Date.now();o.onFinal(tx,'replace');return}
+   if(ln.endsWith(' '+n)||ln.startsWith(n+' '))return}
+  segs.push(tx);if(segs.length>30)segs.shift();lastC=Date.now();o.onFinal(tx,'add')}
+ function onres(e){lastAct=Date.now();netErr=0;got=true;let ip='';
+  for(let i=e.resultIndex;i<e.results.length;i++){const res=e.results[i],tx=res[0]&&res[0].transcript||'';
+   if(res.isFinal){pend='';commit(tx)}else ip+=tx}
+  if(ip)pend=ip.trim();
+  try{o.onInterim&&o.onInterim(ip.trim())}catch(_){}}
+ function onerr(e){const c=e&&e.error;
+  if(c==='no-speech'||c==='aborted')return;
+  if(c==='not-allowed'||c==='service-not-allowed'){want=false;say('error','Chưa có quyền dùng micro. Hãy cho phép micro cho trang này.');return}
+  if(c==='audio-capture'){want=false;say('error','Không tìm thấy micro. Hãy cắm/bật micro rồi thử lại.');return}
+  if(c==='language-not-supported'){want=false;say('error','Trình duyệt chưa hỗ trợ nhận dạng tiếng Việt.');return}
+  if(c==='network'){netErr++;if(netErr>=4){want=false;say('error','Mất kết nối tới dịch vụ nhận giọng nói (cần Internet).')}return}
+  say('warn','Lỗi giọng nói: '+c+' (đang tự thử lại)')}
+ function onend(){r=null;
+  if(pend){const p=pend;pend='';commit(p);try{o.onInterim&&o.onInterim('')}catch(_){}}
+  if(!want){say('stopped');return}
+  if(Date.now()-lastAct>120000){want=false;say('idle','Đã tự dừng vì lâu không nghe thấy tiếng nói.');return}
+  const dur=Date.now()-t0;fast=(dur<1200&&!got)?fast+1:0;
+  if(fast>=5){want=false;say('error','Micro bị ngắt liên tục. Kiểm tra mạng và micro rồi bấm ghi lại.');return}
+  say('restarting');tm=setTimeout(begin,Math.min(120+fast*350,1500))}
+ function begin(){if(!want)return;
+  try{const x=new SR();r=x;x.lang=o.lang||'vi-VN';x.continuous=true;x.interimResults=true;x.maxAlternatives=1;
+   x.onstart=()=>say('listening');x.onresult=onres;x.onerror=onerr;x.onend=onend;t0=Date.now();got=false;x.start()}
+  catch(_){r=null;want=false;say('error','Không khởi động được micro. Hãy kiểm tra quyền micro và thử lại.')}}
+ return{
+  get on(){return want},
+  start(){if(want)return;
+   if(r){r.onresult=r.onerror=r.onend=r.onstart=null;try{r.abort()}catch(_){}r=null}
+   want=true;segs=[];pend='';fast=0;netErr=0;lastAct=Date.now();lastC=0;say('starting');begin()},
+  stop(){want=false;clearTimeout(tm);
+   if(r){const x=r;try{x.stop()}catch(_){}setTimeout(()=>{if(r===x){x.onresult=x.onerror=x.onend=null;try{x.abort()}catch(_){}onend()}},3500)}
+   else say('stopped')}}}
 function voice(mode,btn){
-if(rec){rec.stop();return}
-if(!SR){toast('Trình duyệt này chưa hỗ trợ nhập giọng nói. Hãy mở bằng Chrome hoặc Edge.');return}
-const par=sel;let done=0;rec=new SR();rec.lang='vi-VN';rec.interimResults=true;rec.continuous=mode==='kids';btn.classList.add('live');
-toast(mode==='kids'?'Đang nghe: mỗi câu là một nhánh mới. Bấm lại để dừng.':'Đang nghe, hãy nói…');
-rec.onresult=e=>{if(mode==='one'){const t=[...e.results].map(r=>r[0].transcript).join('');const n=byId(par);n.t=t;txt.value=t;render();pick(par);if(e.results[e.results.length-1].isFinal)save()}
-else for(;done<e.results.length;done++){const r=e.results[done];if(!r.isFinal)break;mk(par,r[0].transcript.trim())}};
-rec.onerror=e=>toast(e.error==='not-allowed'||e.error==='service-not-allowed'?'Chưa có quyền dùng micro. Hãy cho phép micro cho trang này.':e.error==='no-speech'?'Không nghe thấy giọng nói.':'Lỗi giọng nói: '+e.error);
-rec.onend=()=>{rec=null;document.querySelectorAll('.mic').forEach(b=>b.classList.remove('live'))};
-try{rec.start()}catch(_){rec=null;btn.classList.remove('live')}}
+ if(curV&&curV.on){curV.stop();return}
+ if(!SR){toast('Trình duyệt này chưa hỗ trợ nhập giọng nói. Hãy mở bằng Chrome hoặc Edge.');return}
+ const par=sel;let parts=[],base='',lastId=null,ann=false;
+ if(mode==='one'){const a=txt.selectionStart,b=txt.selectionEnd,full=!txt.value||(a===0&&b===txt.value.length);base=full?'':txt.value.replace(/\s+$/,'')}
+ const showOne=ip=>{const n=byId(par);if(!n)return;let s=base;for(const x of parts)s=vjoin(s,vfix(x));if(ip)s=vjoin(s,ip);n.t=s;txt.value=s;render();pick(par)};
+ curV=makeVoice({
+  onFinal(tx,kind){
+   if(mode==='one'){if(kind==='replace')parts[parts.length-1]=tx;else parts.push(tx);showOne('');save();return}
+   const s=vcap(vfix(tx));if(!s)return;
+   if(kind==='replace'&&lastId){const n=byId(lastId);if(n){n.t=s;render();pick(par);save();return}}
+   const n=mk(par,s);lastId=n.id},
+  onInterim(ip){if(mode==='one')showOne(ip);else if(ip)toast('Đang nghe: '+ip.slice(-70))},
+  onState(st,msg){
+   if(st==='listening'&&!ann){ann=true;btn.classList.add('live');toast(mode==='kids'?'Đang nghe: mỗi câu là một nhánh mới. Tự nối lại nếu bị ngắt. Bấm lại để dừng.':'Đang nghe liên tục, tự nối lại nếu bị ngắt. Bấm lại để dừng.')}
+   else if(st==='warn'){toast(msg)}
+   else if(st==='stopped'||st==='error'||st==='idle'){document.querySelectorAll('.mic').forEach(b=>b.classList.remove('live'));if(mode==='one'){showOne('');save()}toast(msg||'Đã dừng ghi giọng nói.');curV=null}}});
+ btn.classList.add('live');curV.start()}
 $('#mic1').onclick=()=>voice('one',$('#mic1'));$('#mic2').onclick=()=>voice('kids',$('#mic2'));
 /* thu gọn, ôn tập, biểu tượng, màu, mẫu */
 $('#col').onclick=()=>{const n=byId(sel);if(S.nodes.some(k=>k.p===n.id)){n.col=!n.col;render();pick(sel);save()}else toast('Nút này chưa có nhánh con.')};
@@ -923,8 +1001,19 @@ if(!out.trim())throw 0;$('#ol').click();$('#ot').value=out;toast('Đã đọc xo
 function splitSpeech(t){let ss=t.replace(/\s+/g,' ').split(/[.!?]+\s*|\n+/).map(s=>s.trim()).filter(Boolean);if(!ss.length)return'';let top=ss[0];const m=top.match(/^(.*?)\s+(?:gồm có|gồm|bao gồm|có phần|có các|với các)\s+(.*)$/i);if(m){top=m[1];ss[0]=m[2]}else ss=ss.slice(1);
 top=top.replace(/^(tôi|mình|em|anh|chị)\s+(muốn|cần|định|sẽ)\s+/i,'');top=top.charAt(0).toUpperCase()+top.slice(1);let out='- '+top.slice(0,70)+'\n';
 ss.forEach(s=>{const body=s.replace(/^(có|gồm|gồm có|bao gồm|thêm|còn|ngoài ra)\s+(phần|mục|những|các)?\s*/i,'');body.split(/\s*[,;]\s*|\s+(?:và|với|rồi|cùng với|hoặc)\s+/i).map(x=>x.replace(/^(và|với|rồi)\s+/i,'').trim()).filter(Boolean).forEach(x=>{out+='  - '+x.charAt(0).toUpperCase()+x.slice(1)+'\n'})});return out}
-function voiceP(btn){if(rec){rec.stop();return}if(!SR){toast('Trình duyệt này chưa hỗ trợ nhập giọng nói. Hãy dùng Chrome.');return}let tx='';rec=new SR();rec.lang='vi-VN';rec.continuous=true;rec.interimResults=false;btn.classList.add('live');toast('Đang nghe cả đoạn. Bấm lại để dừng.');
-rec.onresult=e=>{tx=[...e.results].map(r=>r[0].transcript.trim()).join('. ')};rec.onerror=e=>toast('Lỗi giọng nói: '+e.error);rec.onend=()=>{rec=null;btn.classList.remove('live');if(tx.trim()){$('#ol').click();$('#ot').value=splitSpeech(tx)}};try{rec.start()}catch(_){rec=null;btn.classList.remove('live')}}
+function voiceP(btn){
+ if(curV&&curV.on){curV.stop();return}
+ if(!SR){toast('Trình duyệt này chưa hỗ trợ nhập giọng nói. Hãy dùng Chrome hoặc Edge.');return}
+ let parts=[],ann=false;
+ const finish=()=>{const tx=parts.map(x=>vfix(x).replace(/[.\s]+$/,'')).filter(Boolean).join('. ');parts=[];if(tx.trim()){$('#ol').click();$('#ot').value=splitSpeech(tx)}};
+ curV=makeVoice({
+  onFinal(tx,kind){if(kind==='replace')parts[parts.length-1]=tx;else parts.push(tx);toast('Đã nghe '+parts.length+' câu…')},
+  onInterim(ip){if(ip)toast('Đang nghe: '+ip.slice(-70))},
+  onState(st,msg){
+   if(st==='listening'&&!ann){ann=true;toast('Đang nghe cả đoạn, tự nối lại nếu bị ngắt. Bấm lại để dừng và tạo sơ đồ.')}
+   else if(st==='warn'){toast(msg)}
+   else if(st==='stopped'||st==='error'||st==='idle'){btn.classList.remove('live');curV=null;if(msg)toast(msg);finish()}}});
+ btn.classList.add('live');curV.start()}
 $('#mic3').onclick=()=>voiceP($('#mic3'));
 function readImg2(f,m,cb){if(f.type==='image/gif'&&f.size<6e5){const r=new FileReader();r.onload=()=>cb(r.result);r.readAsDataURL(f)}else readImg(f,m,cb)}
 /* --- ôn tập mở rộng --- */
@@ -985,36 +1074,62 @@ mkCust();theme(S.thm||'Mặc định');render();pick(sel);
 const SK='somo-sync',TK='somo-tomb';
 const syn=()=>{try{return JSON.parse(localStorage.getItem(SK))||{}}catch(_){return{}}},synSet=o=>{try{localStorage.setItem(SK,JSON.stringify(o))}catch(_){}},tombs=()=>{try{return JSON.parse(localStorage.getItem(TK))||[]}catch(_){return[]}};
 function tomb(id){const t=tombs();t.push({id,u:Date.now()});try{localStorage.setItem(TK,JSON.stringify(t))}catch(_){}}
-async function sapi(path,opt,retry){opt=opt||{};const c=syn();if(!c.url||!c.key)throw Error('Chưa cài đặt đồng bộ.');const hd={apikey:c.key,'Content-Type':'application/json',...(opt.headers||{})};if(c.token&&!path.startsWith('/auth/v1/signup'))hd.Authorization='Bearer '+c.token;
-const r=await fetch(c.url.replace(/\/$/,'')+path,{...opt,headers:hd});if(r.status===401&&retry!==false&&c.refresh&&!path.startsWith('/auth')){await srefresh();return sapi(path,opt,false)}
+/* V21: chuẩn hóa URL/key, tránh lỗi dán thừa ký tự */
+function cleanUrl(u){u=String(u||'').trim().replace(/\s+/g,'');if(!u)return'';if(!/^https?:\/\//i.test(u))u='https://'+u;return u.replace(/\/(rest|auth)\/v1.*$/i,'').replace(/\/+$/,'')}
+function cleanKey(k){return String(k||'').replace(/\s+/g,'').replace(/^["']|["']$/g,'')}
+function b64d(s){s=String(s).replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return atob(s)}
+function jwtExp(t){try{return JSON.parse(b64d(t.split('.')[1])).exp*1000}catch(_){return 0}}
+function sLogout(){const d=syn();delete d.token;delete d.refresh;delete d.uid;synSet(d);updCloudBtn()}
+let refreshing=null;
+function srefreshOnce(){return refreshing||(refreshing=srefresh().finally(()=>{refreshing=null}))}
+async function sapi(path,opt,retry){opt=opt||{};let c=syn();if(!c.url||!c.key)throw Error('Chưa cài đặt đồng bộ.');const isAuth=path.startsWith('/auth/');
+if(!isAuth&&c.token&&c.refresh&&retry!==false){const ex=jwtExp(c.token);if(ex&&ex-Date.now()<60000){try{await srefreshOnce();c=syn()}catch(_){}}}
+const hd={apikey:c.key,'Content-Type':'application/json',...(opt.headers||{})};if(c.token&&!isAuth)hd.Authorization='Bearer '+c.token;
+const r=await fetch(cleanUrl(c.url)+path,{...opt,headers:hd});if(r.status===401&&retry!==false&&c.refresh&&!isAuth){try{await srefreshOnce()}catch(e){sLogout();throw Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.')}return sapi(path,opt,false)}
 if(!r.ok){let m='';try{const j=await r.json();m=j.msg||j.message||j.error_description||''}catch(_){}throw Error('Lỗi '+r.status+(m?': '+m:''))}const t=await r.text();return t?JSON.parse(t):null}
-async function sauth(kind,email,pw){const d=await sapi(kind==='up'?'/auth/v1/signup':'/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email,password:pw})},false);if(d&&d.access_token){synSet({...syn(),token:d.access_token,refresh:d.refresh_token,uid:d.user&&d.user.id,email});return true}return false}
+async function sauth(kind,email,pw){const d=await sapi(kind==='up'?'/auth/v1/signup':'/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email,password:pw})},false);if(d&&d.access_token){synSet({...syn(),token:d.access_token,refresh:d.refresh_token,uid:d.user&&d.user.id,email});updCloudBtn();return true}return false}
 /* Đăng nhập Google/Gmail qua Supabase OAuth PKCE; không yêu cầu mật khẩu Gmail. */
 const OAUTH_V='somo-google-verifier';
 function b64url(bytes){let s='';bytes.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 async function googleLogin(){
  const c=syn();if(!c.url||!c.key)throw Error('Hãy nhập Project URL và anon public key trước.');
+ const base=cleanUrl(c.url);
+ if(!/^https:\/\/[^\/]+\.[^\/]+$/i.test(base))throw Error('Project URL chưa đúng. Ví dụ: https://abcdxyz.supabase.co');
  if(!crypto.subtle)throw Error('Đăng nhập Google cần HTTPS.');
+ /* V21: kiểm tra Supabase trước, tránh bị đẩy sang trang JSON lỗi */
+ let cfg;try{const r=await fetch(base+'/auth/v1/settings',{headers:{apikey:c.key}});
+  if(r.status===401||r.status===403)throw Error('Anon public key sai hoặc không thuộc project này (lỗi '+r.status+'). Hãy copy lại đúng khóa "anon public".');
+  if(!r.ok)throw Error('Supabase trả lỗi '+r.status+'. Kiểm tra lại Project URL.');
+  cfg=await r.json()}catch(e){if(/anon|Supabase trả/.test(e.message))throw e;throw Error('Không kết nối được '+base+'. Kiểm tra Project URL và mạng.')}
+ if(cfg&&cfg.external&&cfg.external.google===false)throw Error('Google CHƯA được bật trong Supabase: vào Authentication > Providers > Google, bật Enable và nhập Client ID/Secret.');
  const raw=crypto.getRandomValues(new Uint8Array(32)),ver=b64url(raw),hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ver)),challenge=b64url(new Uint8Array(hash));
- localStorage.setItem(OAUTH_V,ver);
- const redirect=location.origin+location.pathname+location.search;
- const u=c.url.replace(/\/$/,'')+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirect)+'&code_challenge='+encodeURIComponent(challenge)+'&code_challenge_method=s256';
- location.href=u;
+ try{localStorage.setItem(OAUTH_V,ver)}catch(_){throw Error('Trình duyệt đang chặn lưu dữ liệu (chế độ riêng tư?). Hãy mở bằng chế độ thường.')}
+ const redirect=location.origin+location.pathname;
+ location.href=base+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirect)+'&code_challenge='+encodeURIComponent(challenge)+'&code_challenge_method=s256';
 }
+function cleanAuthUrl(){history.replaceState({},document.title,location.pathname)}
 async function finishGoogleLogin(){
- const q=new URLSearchParams(location.search),code=q.get('code');if(!code)return;
+ const q=new URLSearchParams(location.search),hq=new URLSearchParams(location.hash.replace(/^#/,'')),code=q.get('code');
+ const err=q.get('error_description')||hq.get('error_description')||q.get('error')||hq.get('error');
+ if(err){cleanAuthUrl();try{localStorage.removeItem(OAUTH_V)}catch(_){}setTimeout(()=>toast('Đăng nhập Google bị từ chối: '+err.replace(/\+/g,' ')),400);return}
+ /* dự phòng: nếu Supabase trả token trực tiếp trên #hash (implicit flow) */
+ if(!code&&hq.get('access_token')&&hq.get('refresh_token')){
+  try{const tk=hq.get('access_token');let em='Tài khoản Google',uid;try{const pl=JSON.parse(b64d(tk.split('.')[1]));em=pl.email||em;uid=pl.sub}catch(_){}
+   synSet({...syn(),token:tk,refresh:hq.get('refresh_token'),uid,email:em});cleanAuthUrl();updCloudBtn();setTimeout(()=>{toast('Đăng nhập Google thành công.');syncAll(true)},400)}catch(e){cleanAuthUrl()}
+  return}
+ if(!code)return;
  const ver=localStorage.getItem(OAUTH_V),c=syn();
  try{
-  if(!ver||!c.url||!c.key)throw Error('Thiếu thông tin xác thực Google. Hãy mở lại Cài đặt đồng bộ.');
-  const r=await fetch(c.url.replace(/\/$/,'')+'/auth/v1/token?grant_type=pkce',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({auth_code:code,code_verifier:ver})});
-  const d=await r.json();if(!r.ok||!d.access_token)throw Error(d.msg||d.message||d.error_description||'Không đổi được mã đăng nhập Google.');
+  if(!ver||!c.url||!c.key)throw Error('Thiếu thông tin xác thực Google. Hãy mở lại Cài đặt đồng bộ và thử lại.');
+  const r=await fetch(cleanUrl(c.url)+'/auth/v1/token?grant_type=pkce',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({auth_code:code,code_verifier:ver})});
+  const d=await r.json().catch(()=>({}));if(!r.ok||!d.access_token)throw Error(d.msg||d.message||d.error_description||'Không đổi được mã đăng nhập Google (mã chỉ dùng được 1 lần, hãy bấm đăng nhập lại).');
   const email=d.user?.email||d.user?.user_metadata?.email||'Tài khoản Google';
   synSet({...syn(),token:d.access_token,refresh:d.refresh_token,uid:d.user&&d.user.id,email});localStorage.removeItem(OAUTH_V);
-  history.replaceState({},document.title,location.pathname+location.hash);
-  setTimeout(()=>{toast('Đăng nhập Google thành công.');syncAll(true)},400);
- }catch(e){localStorage.removeItem(OAUTH_V);history.replaceState({},document.title,location.pathname+location.hash);setTimeout(()=>toast('Đăng nhập Google lỗi: '+e.message),400)}
+  cleanAuthUrl();updCloudBtn();
+  setTimeout(()=>{toast('Đăng nhập Google thành công: '+email);syncAll(true)},400);
+ }catch(e){try{localStorage.removeItem(OAUTH_V)}catch(_){}cleanAuthUrl();setTimeout(()=>toast('Đăng nhập Google lỗi: '+e.message),400)}
 }
-async function srefresh(){const d=await sapi('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:syn().refresh})},false);synSet({...syn(),token:d.access_token,refresh:d.refresh_token})}
+async function srefresh(){const d=await sapi('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:syn().refresh})},false);if(!d||!d.access_token)throw Error('refresh');synSet({...syn(),token:d.access_token,refresh:d.refresh_token||syn().refresh})}
 const UP='/rest/v1/somo_maps?on_conflict=owner,id',PF={Prefer:'resolution=merge-duplicates,return=minimal'};
 let syncing=false,synT=null;
 function dropMap(m){localStorage.removeItem(m.key);localStorage.removeItem(m.key+'-ver');LIB=LIB.filter(x=>x.id!==m.id)}
@@ -1027,27 +1142,31 @@ if((!r&&(m.c||m.u))||(r&&!r.deleted&&u>su&&u>=r.updated_at)){const raw=localStor
 else if(r&&!r.deleted&&r.updated_at>su&&r.updated_at>u){const d=await sapi('/rest/v1/somo_maps?select=data,name&id=eq.'+encodeURIComponent(m.id));if(d&&d[0]){if(m.id===CUR)addVer('Trước khi đồng bộ');const dd=d[0].data;if(dd.startsWith('ENC1:'))localStorage.setItem(m.key,dd);else persist(m.key,dd);m.name=d[0].name||m.name;m.u=m.su=r.updated_at;pl++;if(m.id===CUR)re=re||true}}}
 for(const r of rem){if(r.deleted||LIB.some(m=>m.id===r.id))continue;const d=await sapi('/rest/v1/somo_maps?select=data,name&id=eq.'+encodeURIComponent(r.id));if(d&&d[0]){const key='somo-map-'+r.id,dd=d[0].data;if(dd.startsWith('ENC1:'))localStorage.setItem(key,dd);else persist(key,dd);LIB.push({id:r.id,name:d[0].name||'Sơ đồ',key,u:r.updated_at,su:r.updated_at,c:1});pl++}}
 const un=LIB.find(m=>!m.u&&!m.c&&!m.su);if(un&&LIB.length>1){if(un.id===CUR)re='del';dropMap(un)}
-await encQ;libSet(LIB);if(re==='del')await openMap(LIB[0].id,null,true);else if(re)await openMap(CUR,null,true);synSet({...syn(),last:Date.now()});if(!quiet||pu||pl||dl)toast('Đồng bộ xong: gửi '+pu+', nhận '+pl+', xóa '+dl+'.')}
+await encQ;libSet(LIB);if(re==='del')await openMap(LIB[0].id,null,true);else if(re)await openMap(CUR,null,true);synSet({...syn(),last:Date.now()});updCloudBtn();if(!quiet||pu||pl||dl)toast('Đồng bộ xong: gửi '+pu+', nhận '+pl+', xóa '+dl+'.')}
 catch(e){toast('Đồng bộ lỗi: '+e.message)}finally{syncing=false}}
 function syncSoon(){const c=syn();if(!c.token||!c.auto)return;clearTimeout(synT);synT=setTimeout(()=>syncAll(true),8000)}
 const _s10=save;save=function(){_s10();if(!window.__encLock){const m=LIB.find(x=>x.id===CUR);if(m){m.u=Date.now();libSet(LIB)}}syncSoon()};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&syn().auto)syncAll(true)});
-function synPanel(){const c=syn();panel('<h3 style="margin:0 0 6px">Đồng bộ đám mây</h3><p style="margin:0 0 8px;opacity:.8">Đăng nhập Google/Gmail hoặc email riêng. Sơ đồ được lưu trong Supabase của bạn và đồng bộ giữa các thiết bị.</p><input id="sy1" placeholder="Project URL (https://xxxx.supabase.co)" style="width:100%"><input id="sy2" placeholder="Khóa anon public" style="width:100%;margin-top:8px"><div class="pr"><button id="syGoogle" style="flex:1 1 100%;background:#2f7f6f;color:white;border-color:#2f7f6f">Đăng nhập bằng Google / Gmail</button></div><p style="margin:7px 0 2px;opacity:.7;font-size:12px">Hoặc dùng email và mật khẩu riêng của ứng dụng:</p><div class="pr"><input id="sy3" type="email" placeholder="Email" style="flex:1 1 150px"><input id="sy4" type="password" placeholder="Mật khẩu ứng dụng" style="flex:1 1 150px"></div><div class="pr"><button id="sy5">Đăng nhập email</button><button id="sy6">Đăng ký email</button><button id="sy7">Đăng xuất</button></div><label style="display:block;margin-top:10px"><input type="checkbox" id="sy8"> Tự đồng bộ khi chỉnh sửa và khi mở app</label><div class="pr"><button id="sy9">Đồng bộ ngay</button></div><p id="syst" style="opacity:.85"></p>');
+function synPanel(){const c=syn();panel('<h3 style="margin:0 0 6px">Đồng bộ đám mây</h3><p style="margin:0 0 8px;opacity:.8">Bước 1: dán Project URL và anon public key của Supabase vào hai ô bên dưới. Bước 2: bấm Đăng nhập bằng Google/Gmail. Nút Google chỉ hoạt động sau khi cấu hình Google Provider trong Supabase.</p><input id="sy1" placeholder="Project URL (https://xxxx.supabase.co)" style="width:100%"><input id="sy2" placeholder="Khóa anon public" style="width:100%;margin-top:8px"><div class="pr"><button id="syGoogle" style="flex:1 1 100%;background:#2f7f6f;color:white;border-color:#2f7f6f">Đăng nhập bằng Google / Gmail</button></div><p style="margin:7px 0 2px;opacity:.7;font-size:12px">Hoặc dùng email và mật khẩu riêng của ứng dụng:</p><div class="pr"><input id="sy3" type="email" placeholder="Email" style="flex:1 1 150px"><input id="sy4" type="password" placeholder="Mật khẩu ứng dụng" style="flex:1 1 150px"></div><div class="pr"><button id="sy5">Đăng nhập email</button><button id="sy6">Đăng ký email</button><button id="sy7">Đăng xuất</button></div><label style="display:block;margin-top:10px"><input type="checkbox" id="sy8"> Tự đồng bộ khi chỉnh sửa và khi mở app</label><div class="pr"><button id="sy9">Đồng bộ ngay</button></div><p id="syst" style="opacity:.85"></p><p id="syhelp" style="opacity:.7;font-size:12px;word-break:break-all"></p>');
 $('#sy1').value=c.url||'';$('#sy2').value=c.key||'';$('#sy3').value=c.email||'';$('#sy8').checked=!!c.auto;const st=()=>{const d=syn();$('#syst').textContent=d.token?'Đã đăng nhập: '+d.email+(d.last?' · đồng bộ lần cuối '+new Date(d.last).toLocaleString('vi-VN'):''):'Chưa đăng nhập.'};st();
-const save2=()=>synSet({...syn(),url:$('#sy1').value.trim(),key:$('#sy2').value.trim(),auto:$('#sy8').checked});
+const showHelp=()=>{const u=cleanUrl($('#sy1').value);$('#syhelp').innerHTML='Khai báo trong Supabase (URL Configuration, cả Site URL và Redirect URLs):<br><b>'+location.origin+location.pathname+'</b>'+(u?'<br>Google Cloud, Authorized redirect URI:<br><b>'+u+'/auth/v1/callback</b>':'')+'<br>Phiên bản app: V22'};showHelp();$('#sy1').addEventListener('input',showHelp);
+const save2=()=>{const u=cleanUrl($('#sy1').value),k=cleanKey($('#sy2').value);$('#sy1').value=u;$('#sy2').value=k;synSet({...syn(),url:u,key:k,auto:$('#sy8').checked})};
 const go=async k=>{save2();try{const ok=await sauth(k,$('#sy3').value.trim(),$('#sy4').value);$('#syst').textContent=ok?'Thành công.':'Đăng ký xong. Hãy xác nhận email rồi đăng nhập (hoặc tắt "Confirm email" trong Supabase).';if(ok){st();syncAll()}}catch(e){$('#syst').textContent=e.message}};
-$('#syGoogle').onclick=async()=>{save2();try{await googleLogin()}catch(e){$('#syst').textContent=e.message}};
-$('#sy5').onclick=()=>go('in');$('#sy6').onclick=()=>go('up');$('#sy7').onclick=()=>{const d=syn();delete d.token;delete d.refresh;delete d.uid;synSet(d);st()};$('#sy8').onchange=save2;$('#sy9').onclick=()=>{save2();pn.classList.remove('on');syncAll()}}
+$('#syGoogle').onclick=async()=>{save2();$('#syst').textContent='Đang kiểm tra Supabase…';try{await googleLogin()}catch(e){$('#syst').textContent=e.message;toast(e.message);if(!syn().url)$('#sy1').focus();else if(!syn().key)$('#sy2').focus()}};
+$('#sy5').onclick=()=>go('in');$('#sy6').onclick=()=>go('up');$('#sy7').onclick=()=>{sLogout();st();toast('Đã đăng xuất đồng bộ.')};$('#sy8').onchange=save2;$('#sy9').onclick=()=>{save2();pn.classList.remove('on');syncAll()}}
 Object.assign(ACT,{synS:synPanel,synN:()=>syncAll()});
-/* V19: đặt lối vào đăng nhập/đồng bộ ngay trên màn hình chính, không phải tìm trong menu dài. */
+/* V21: nút đăng nhập nổi, hiện trạng thái, tự ẩn khi Trình chiếu/Zen */
+function updCloudBtn(){const b=document.getElementById('cloudSyncBtn');if(!b)return;const c=syn();
+ if(c.token){b.textContent='☁ ✓';b.title='Đã đăng nhập'+(c.email?': '+c.email:'')+' — bấm để mở đồng bộ';b.style.background='#1f5f52'}
+ else{b.textContent='☁ Đăng nhập';b.title='Mở cài đặt đăng nhập và đồng bộ đám mây';b.style.background='#2f7f6f'}
+ b.setAttribute('aria-label',b.title)}
 (()=>{
- const z=document.querySelector('.zb');
- if(!z||document.getElementById('cloudSyncBtn'))return;
+ if(document.getElementById('cloudSyncBtn'))return;
+ const st=document.createElement('style');st.textContent='.pres #cloudSyncBtn,.zen #cloudSyncBtn{display:none!important}';document.head.appendChild(st);
  const b=document.createElement('button');b.id='cloudSyncBtn';b.type='button';
- b.textContent='☁ Đăng nhập';b.title='Đăng nhập Google / cài đặt đồng bộ đám mây';
- b.setAttribute('aria-label','Đăng nhập Google và cài đặt đồng bộ đám mây');
- b.style.cssText='width:auto;min-width:46px;padding:0 11px;border-radius:24px;font-size:12px;white-space:nowrap;background:#2f7f6f;color:#fff;border-color:#2f7f6f';
- b.addEventListener('click',()=>synPanel());z.prepend(b);
+ b.style.cssText='position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));z-index:49;display:block;padding:9px 14px;min-height:44px;border:1px solid #246b5d;border-radius:24px;background:#2f7f6f;color:#fff;font:600 14px system-ui;box-shadow:0 3px 14px #0004;cursor:pointer;touch-action:manipulation';
+ b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();try{synPanel()}catch(err){toast('Không mở được đăng nhập: '+(err?.message||err))}});
+ document.body.appendChild(b);updCloudBtn();
 })();
 finishGoogleLogin();
 if(syn().auto)setTimeout(()=>syncAll(true),2500);
@@ -1103,26 +1222,33 @@ if(syn().auto)setTimeout(()=>syncAll(true),2500);
  $r('readResume').addEventListener('click',()=>{if(!supported)return;if(!parts.length){start();return}if(index>=parts.length){start();return}paused=false;playing=true;try{speechSynthesis.resume()}catch(_){}setStatus('Đang tiếp tục đọc…');if(!speechSynthesis.speaking&&!speechSynthesis.pending)speakNext(runId)});
  $r('readStop').addEventListener('click',()=>{runId++;if(supported)speechSynthesis.cancel();playing=false;paused=false;setStatus('Đã dừng đọc. Nội dung vẫn nằm nguyên trong ô văn bản. Có thể bấm Đọc từ đầu bất cứ lúc nào.');current.textContent='Đã dừng tại đoạn '+Math.min(index+1,parts.length)+' / '+parts.length+'.'});
  rate.addEventListener('input',()=>{$r('readRateVal').textContent=Number(rate.value).toFixed(1)+'×'});
- // SpeechRecognition is browser-provided dictation (not an audio file recorder). Final results append; they never replace prior text.
- const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- function stopDict(){if(recognition){try{recognition.stop()}catch(e){}}}
- $r('dictStart').addEventListener('click',()=>{
-  if(dictating){stopDict();return}
-  if(!SR){setStatus('Trình duyệt này chưa hỗ trợ chuyển giọng nói thành văn bản. Hãy mở bằng Chrome trên Android, cấp quyền micro và kết nối Internet.');return}
-  try{
-   recognition=new SR();recognition.lang='vi-VN';recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;
-   dictating=true;dictBase=input.value.trimEnd();$r('dictStart').disabled=true;$r('dictStop').disabled=false;setStatus('Đang nghe tiếng Việt… Hãy nói rõ từng câu. Bản ghi sẽ được nối vào cuối, không ghi đè văn bản cũ.');
-   recognition.onresult=e=>{let finals=[],interim='';for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],t=r[0].transcript.trim();if(!t)continue;if(r.isFinal)finals.push(t);else interim+=t}
-    if(finals.length){const addition=finals.join(' ').replace(/\s+([,.;:!?])/g,'$1');dictBase+=(dictBase?'\n':'')+addition;input.value=dictBase;input.scrollTop=input.scrollHeight}
-    setStatus(interim?'Đang nhận dạng: '+interim:'Đã nhận '+dictBase.length+' ký tự. Tiếp tục nói hoặc bấm Dừng ghi.');
-   };
-   recognition.onerror=e=>{setStatus(e.error==='not-allowed'?'Micro chưa được cấp quyền. Hãy cho phép micro trong cài đặt trang.':e.error==='no-speech'?'Chưa nghe thấy tiếng nói. Bạn có thể bấm ghi lại; văn bản đã nhận vẫn còn.':'Lỗi nhận dạng: '+e.error+'. Văn bản đã nhận vẫn được giữ.');};
-   recognition.onend=()=>{dictating=false;recognition=null;$r('dictStart').disabled=false;$r('dictStop').disabled=true;if(input.value.trim())dictBase=input.value.trimEnd();if(status.textContent.startsWith('Đang nghe'))setStatus('Đã dừng ghi. Văn bản được giữ nguyên; có thể ghi tiếp hoặc sao chép.')};
-   recognition.start();
-  }catch(e){dictating=false;recognition=null;$r('dictStart').disabled=false;$r('dictStop').disabled=true;setStatus('Không khởi động được micro. Hãy kiểm tra quyền micro và thử lại.')}
- });
- $r('dictStop').addEventListener('click',stopDict);
- $r('dictClear').addEventListener('click',()=>{if(!confirm('Xóa toàn bộ văn bản trong ô?'))return;input.value='';dictBase='';setStatus('Đã xóa theo yêu cầu.')});
+ // V22: ghi lời nói dùng bộ nhận dạng dùng chung (makeVoice): tự nối lại, chỉ nối thêm, không ghi đè, chống lặp.
+ let vd=null,lastBefore='',lastAfter='';
+ const dStart=$r('dictStart'),dStop=$r('dictStop');
+ function dUi(on){dStart.disabled=on;dStop.disabled=!on}
+ dStart.addEventListener('click',()=>{
+  if(vd&&vd.on)return;
+  if(!SR){setStatus('Trình duyệt này chưa hỗ trợ chuyển giọng nói thành văn bản. Hãy mở bằng Chrome hoặc Edge, cấp quyền micro và kết nối Internet.');return}
+  lastBefore=lastAfter='';let ann=false;
+  vd=makeVoice({
+   onFinal(tx,kind){const p=vfix(tx);if(!p)return;
+    if(kind==='replace'&&lastAfter&&input.value===lastAfter)input.value=lastBefore;
+    const before=input.value;input.value=vjoin(before,p);lastBefore=before;lastAfter=input.value;input.scrollTop=input.scrollHeight;
+    setStatus('Đã nhận '+input.value.length+' ký tự. Tiếp tục nói hoặc bấm Dừng ghi.')},
+   onInterim(ip){if(ip)setStatus('Đang nhận dạng: '+ip)},
+   onState(st,msg){
+    if(st==='listening'){dUi(true);if(!ann){ann=true;setStatus('Đang nghe tiếng Việt… cứ nói tự nhiên, nếu bị ngắt sẽ tự nối lại. Bản ghi chỉ nối thêm vào cuối, không xóa văn bản cũ.')}}
+    else if(st==='starting'){dUi(true)}
+    else if(st==='restarting'){}
+    else if(st==='warn'){setStatus(msg)}
+    else{dUi(false);vd=null;setStatus((msg?msg+' ':'')+'Đã dừng ghi. Văn bản được giữ nguyên; có thể ghi tiếp hoặc sao chép.')}}});
+  dUi(true);vd.start()});
+ dStop.addEventListener('click',()=>{if(vd)vd.stop()});
+ $r('dictClear').addEventListener('click',()=>{if(!confirm('Xóa toàn bộ văn bản trong ô?'))return;input.value='';lastBefore=lastAfter='';setStatus('Đã xóa theo yêu cầu.')});
+ /* Từ điển sửa lỗi: mỗi dòng "chữ nghe sai = chữ đúng" */
+ const vBtn=$r('vocabBtn'),vBox=$r('vocabBox'),vTxt=$r('vocabText');
+ vBtn.addEventListener('click',()=>{const open=vBox.style.display==='none';vBox.style.display=open?'block':'none';if(open){vTxt.value=vocabGet();vTxt.focus()}});
+ vTxt.addEventListener('input',()=>{try{localStorage.setItem(VK,vTxt.value)}catch(_){}});
  $r('readCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(input.value);setStatus('Đã sao chép văn bản.')}catch(e){input.focus();input.select();setStatus('Hãy nhấn giữ văn bản và chọn Sao chép.')}});
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing&&!paused){/* Browser may suspend speech in background; source text and position remain in memory. */}});
 })();
