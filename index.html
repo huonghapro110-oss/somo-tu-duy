@@ -989,6 +989,31 @@ async function sapi(path,opt,retry){opt=opt||{};const c=syn();if(!c.url||!c.key)
 const r=await fetch(c.url.replace(/\/$/,'')+path,{...opt,headers:hd});if(r.status===401&&retry!==false&&c.refresh&&!path.startsWith('/auth')){await srefresh();return sapi(path,opt,false)}
 if(!r.ok){let m='';try{const j=await r.json();m=j.msg||j.message||j.error_description||''}catch(_){}throw Error('Lỗi '+r.status+(m?': '+m:''))}const t=await r.text();return t?JSON.parse(t):null}
 async function sauth(kind,email,pw){const d=await sapi(kind==='up'?'/auth/v1/signup':'/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email,password:pw})},false);if(d&&d.access_token){synSet({...syn(),token:d.access_token,refresh:d.refresh_token,uid:d.user&&d.user.id,email});return true}return false}
+/* Đăng nhập Google/Gmail qua Supabase OAuth PKCE; không yêu cầu mật khẩu Gmail. */
+const OAUTH_V='somo-google-verifier';
+function b64url(bytes){let s='';bytes.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+async function googleLogin(){
+ const c=syn();if(!c.url||!c.key)throw Error('Hãy nhập Project URL và anon public key trước.');
+ if(!crypto.subtle)throw Error('Đăng nhập Google cần HTTPS.');
+ const raw=crypto.getRandomValues(new Uint8Array(32)),ver=b64url(raw),hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ver)),challenge=b64url(new Uint8Array(hash));
+ localStorage.setItem(OAUTH_V,ver);
+ const redirect=location.origin+location.pathname+location.search;
+ const u=c.url.replace(/\/$/,'')+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirect)+'&code_challenge='+encodeURIComponent(challenge)+'&code_challenge_method=s256';
+ location.href=u;
+}
+async function finishGoogleLogin(){
+ const q=new URLSearchParams(location.search),code=q.get('code');if(!code)return;
+ const ver=localStorage.getItem(OAUTH_V),c=syn();
+ try{
+  if(!ver||!c.url||!c.key)throw Error('Thiếu thông tin xác thực Google. Hãy mở lại Cài đặt đồng bộ.');
+  const r=await fetch(c.url.replace(/\/$/,'')+'/auth/v1/token?grant_type=pkce',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({auth_code:code,code_verifier:ver})});
+  const d=await r.json();if(!r.ok||!d.access_token)throw Error(d.msg||d.message||d.error_description||'Không đổi được mã đăng nhập Google.');
+  const email=d.user?.email||d.user?.user_metadata?.email||'Tài khoản Google';
+  synSet({...syn(),token:d.access_token,refresh:d.refresh_token,uid:d.user&&d.user.id,email});localStorage.removeItem(OAUTH_V);
+  history.replaceState({},document.title,location.pathname+location.hash);
+  setTimeout(()=>{toast('Đăng nhập Google thành công.');syncAll(true)},400);
+ }catch(e){localStorage.removeItem(OAUTH_V);history.replaceState({},document.title,location.pathname+location.hash);setTimeout(()=>toast('Đăng nhập Google lỗi: '+e.message),400)}
+}
 async function srefresh(){const d=await sapi('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:syn().refresh})},false);synSet({...syn(),token:d.access_token,refresh:d.refresh_token})}
 const UP='/rest/v1/somo_maps?on_conflict=owner,id',PF={Prefer:'resolution=merge-duplicates,return=minimal'};
 let syncing=false,synT=null;
@@ -1007,12 +1032,14 @@ catch(e){toast('Đồng bộ lỗi: '+e.message)}finally{syncing=false}}
 function syncSoon(){const c=syn();if(!c.token||!c.auto)return;clearTimeout(synT);synT=setTimeout(()=>syncAll(true),8000)}
 const _s10=save;save=function(){_s10();if(!window.__encLock){const m=LIB.find(x=>x.id===CUR);if(m){m.u=Date.now();libSet(LIB)}}syncSoon()};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&syn().auto)syncAll(true)});
-function synPanel(){const c=syn();panel('<h3 style="margin:0 0 6px">Đồng bộ đám mây</h3><p style="margin:0 0 8px;opacity:.8">Dùng Supabase miễn phí của riêng bạn. Xem file HUONG-DAN-DONG-BO.md. Dữ liệu mã hóa bằng mật khẩu (nếu đã bật) sẽ được mã hóa cả trên đám mây.</p><input id="sy1" placeholder="Project URL (https://xxxx.supabase.co)" style="width:100%"><input id="sy2" placeholder="Khóa anon public" style="width:100%;margin-top:8px"><div class="pr"><input id="sy3" type="email" placeholder="Email" style="flex:1 1 150px"><input id="sy4" type="password" placeholder="Mật khẩu (từ 6 ký tự)" style="flex:1 1 150px"></div><div class="pr"><button id="sy5">Đăng nhập</button><button id="sy6">Đăng ký</button><button id="sy7">Đăng xuất</button></div><label style="display:block;margin-top:10px"><input type="checkbox" id="sy8"> Tự đồng bộ khi chỉnh sửa và khi mở app</label><div class="pr"><button id="sy9">Đồng bộ ngay</button></div><p id="syst" style="opacity:.85"></p>');
+function synPanel(){const c=syn();panel('<h3 style="margin:0 0 6px">Đồng bộ đám mây</h3><p style="margin:0 0 8px;opacity:.8">Đăng nhập Google/Gmail hoặc email riêng. Sơ đồ được lưu trong Supabase của bạn và đồng bộ giữa các thiết bị.</p><input id="sy1" placeholder="Project URL (https://xxxx.supabase.co)" style="width:100%"><input id="sy2" placeholder="Khóa anon public" style="width:100%;margin-top:8px"><div class="pr"><button id="syGoogle" style="flex:1 1 100%;background:#2f7f6f;color:white;border-color:#2f7f6f">Đăng nhập bằng Google / Gmail</button></div><p style="margin:7px 0 2px;opacity:.7;font-size:12px">Hoặc dùng email và mật khẩu riêng của ứng dụng:</p><div class="pr"><input id="sy3" type="email" placeholder="Email" style="flex:1 1 150px"><input id="sy4" type="password" placeholder="Mật khẩu ứng dụng" style="flex:1 1 150px"></div><div class="pr"><button id="sy5">Đăng nhập email</button><button id="sy6">Đăng ký email</button><button id="sy7">Đăng xuất</button></div><label style="display:block;margin-top:10px"><input type="checkbox" id="sy8"> Tự đồng bộ khi chỉnh sửa và khi mở app</label><div class="pr"><button id="sy9">Đồng bộ ngay</button></div><p id="syst" style="opacity:.85"></p>');
 $('#sy1').value=c.url||'';$('#sy2').value=c.key||'';$('#sy3').value=c.email||'';$('#sy8').checked=!!c.auto;const st=()=>{const d=syn();$('#syst').textContent=d.token?'Đã đăng nhập: '+d.email+(d.last?' · đồng bộ lần cuối '+new Date(d.last).toLocaleString('vi-VN'):''):'Chưa đăng nhập.'};st();
 const save2=()=>synSet({...syn(),url:$('#sy1').value.trim(),key:$('#sy2').value.trim(),auto:$('#sy8').checked});
 const go=async k=>{save2();try{const ok=await sauth(k,$('#sy3').value.trim(),$('#sy4').value);$('#syst').textContent=ok?'Thành công.':'Đăng ký xong. Hãy xác nhận email rồi đăng nhập (hoặc tắt "Confirm email" trong Supabase).';if(ok){st();syncAll()}}catch(e){$('#syst').textContent=e.message}};
-$('#sy5').onclick=()=>go('in');$('#sy6').onclick=()=>go('up');$('#sy7').onclick=()=>{const d=syn();delete d.token;delete d.refresh;synSet(d);st()};$('#sy8').onchange=save2;$('#sy9').onclick=()=>{save2();pn.classList.remove('on');syncAll()}}
+$('#syGoogle').onclick=async()=>{save2();try{await googleLogin()}catch(e){$('#syst').textContent=e.message}};
+$('#sy5').onclick=()=>go('in');$('#sy6').onclick=()=>go('up');$('#sy7').onclick=()=>{const d=syn();delete d.token;delete d.refresh;delete d.uid;synSet(d);st()};$('#sy8').onchange=save2;$('#sy9').onclick=()=>{save2();pn.classList.remove('on');syncAll()}}
 Object.assign(ACT,{synS:synPanel,synN:()=>syncAll()});
+finishGoogleLogin();
 if(syn().auto)setTimeout(()=>syncAll(true),2500);
 
 /* V14 reader + speech dictation: preserves source text and processes long passages sequentially. */
