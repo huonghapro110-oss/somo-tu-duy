@@ -19,3 +19,14 @@ Upload ghi đè `index.html`, `sw.js` và README mới lên thư mục gốc rep
 
 ## Giới hạn
 Nhận dạng dùng dịch vụ có sẵn của Chrome/Edge (cần Internet), độ chính xác phụ thuộc micro và môi trường ồn. Muốn chuẩn hơn nữa cần ghi âm rồi gửi cho dịch vụ nhận dạng riêng (Whisper/Gemini, cần API key).
+
+## V22.1
+- Ô Project URL / khóa chấp nhận dán cả dòng `NEXT_PUBLIC_SUPABASE_URL=https://...`; app tự lấy đúng phần địa chỉ và khóa.
+- Địa chỉ cần khai báo trong Supabase không còn đuôi `index.html` (dùng `https://<tên>.github.io/<repo>/`).
+
+## V22.2
+- Lần đồng bộ đầu tiên tự gửi lên cả các sơ đồ cũ đã có nội dung (nhiều hơn 1 nút, hoặc sơ đồ đã khóa). Trước đây chỉ gửi sơ đồ vừa tạo/sửa nên điện thoại không nhận được gì.
+- Sơ đồ chỉ có đúng 1 nút gốc (gần như trống) vẫn không bị gửi.
+
+## V22.3
+- Sửa cột nút bên phải (☰ + ↶ ↷ phóng to/thu nhỏ, A+/A−, ◎) không bấm được bằng **chuột** trên laptop: vùng sơ đồ trước đây "bắt" con trỏ cả khi bấm vào nút nên Chrome không gửi cú nhấp cho nút. Giờ bấm vào nút thì không bắt con trỏ. Kéo nền, kéo nút, chụm hai ngón vẫn như cũ.

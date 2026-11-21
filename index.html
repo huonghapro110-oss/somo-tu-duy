@@ -381,7 +381,44 @@ if(!S||!S.nodes||!S.nodes.length)S={nodes:[
 {id:1,p:null,x:0,y:0,t:'Chủ đề chính (bấm để tự nhập)',c:COL[0],f:'pill'}],bg:null,op:.5,v:null,seeded:1};
 let nid=Math.max(...S.nodes.map(n=>n.id)),sel=S.nodes[0].id,drag=null;
 const byId=id=>S.nodes.find(n=>n.id===id);
-function save(){if(window.__encLock)return;try{persist(KEY,JSON.stringify(S))}catch(e){$('#hint').textContent='Bộ nhớ trình duyệt đầy: ảnh quá nặng sẽ không được lưu lại.'}}
+/* ===== V25: tiến độ học tách riêng khỏi dữ liệu sơ đồ =====
+   Dữ liệu sơ đồ KHÔNG còn chứa box/due/wrong/lg. Tiến độ lưu ở khóa "<khóa sơ đồ>-pg" và đồng bộ thành dòng riêng "pg:<id sơ đồ>",
+   gộp theo từng thẻ (thẻ nào mới hơn thì thắng) nên học trên điện thoại và sửa trên laptop không ghi đè nhau. */
+const pgK=k=>k+'-pg';
+function pgGet(k){try{const d=JSON.parse(localStorage.getItem(pgK(k)));if(!d||typeof d!=='object')return null;d.c=d.c||{};d.lg=d.lg||[];d.u=d.u||0;return d}catch(_){return null}}
+function pgSet(k,d){try{localStorage.setItem(pgK(k),JSON.stringify(d))}catch(_){}}
+function pgStrip(k,v){if(k==='lg'&&this===S)return undefined;if((k==='box'||k==='due'||k==='wrong')&&this&&typeof this==='object'&&'id' in this&&'t' in this&&'p' in this)return undefined;return v}
+function pgWrite(k){const old=pgGet(k)||{c:{},lg:[],u:0},c={};let ch=false;const now=Date.now();
+ for(const n of S.nodes){if(n.box===undefined&&!n.due&&!n.wrong)continue;const e=[n.box||0,n.due||0,n.wrong?1:0],o=old.c[n.id];
+  if(o&&o[0]===e[0]&&o[1]===e[1]&&o[2]===e[2])c[n.id]=o;else{c[n.id]=[e[0],e[1],e[2],now];ch=true}}
+ const lg=(S.lg||[]).slice(-500),ol=old.lg;
+ if(lg.length!==ol.length||(lg.length&&lg[lg.length-1].t!==ol[ol.length-1].t))ch=true;
+ if(ch)pgSet(k,{c,lg,u:now});
+ else if(Object.keys(c).length!==Object.keys(old.c).length)pgSet(k,{c,lg:old.lg,u:old.u})}
+function pgLoad(k,Sx){if(!Sx||!Sx.nodes)return;const d=pgGet(k)||{c:{},lg:[],u:0};let mig=false;
+ for(const n of Sx.nodes){const e=d.c[n.id];
+  if(e){n.box=e[0];n.due=e[1];n.wrong=!!e[2]}
+  else if(n.box!==undefined||n.due||n.wrong){d.c[n.id]=[n.box||0,n.due||0,n.wrong?1:0,1];mig=true}}
+ if(d.lg.length)Sx.lg=d.lg.slice();else if(Sx.lg&&Sx.lg.length){d.lg=Sx.lg.slice(-500);mig=true}
+ if(mig){d.u=Date.now();pgSet(k,d)}}
+function pgReapply(){const d=pgGet(KEY);if(!d)return;for(const n of S.nodes){const e=d.c[n.id];if(e){n.box=e[0];n.due=e[1];n.wrong=!!e[2]}else{delete n.box;delete n.due;delete n.wrong}}if(d.lg.length)S.lg=d.lg.slice()}
+function pgApplyDoc(d){for(const n of S.nodes){const e=d.c[n.id];if(e){n.box=e[0];n.due=e[1];n.wrong=!!e[2]}}S.lg=(d.lg||[]).slice();render();updDue()}
+function pgMerge(a,b){a=a||{c:{},lg:[],u:0};b=b||{c:{},lg:[],u:0};const c={};
+ for(const id of new Set([...Object.keys(a.c||{}),...Object.keys(b.c||{})])){const x=a.c[id],y=b.c[id];c[id]=!x?y:!y?x:((y[3]||0)>(x[3]||0)?y:x)}
+ const seen=new Set(),lg=[...(a.lg||[]),...(b.lg||[])].filter(e=>{const k=e.t+'|'+e.m;if(seen.has(k))return false;seen.add(k);return true}).sort((p,q)=>p.t-q.t).slice(-500);
+ return{c,lg,u:Math.max(a.u||0,b.u||0)}}
+function pgDiff(a,b){a=a||{c:{},lg:[]};for(const id in b.c){const x=a.c[id],y=b.c[id];if(!x||x[0]!==y[0]||x[1]!==y[1]||x[2]!==y[2]||x[3]!==y[3])return true}return (a.lg||[]).length!==(b.lg||[]).length}
+async function syncPg(m,R2){const loc=pgGet(m.key),rid='pg:'+m.id,r=R2.get(rid),su=m.pgsu||0,lu=loc?loc.u||0:0,remoteNew=!!(r&&!r.deleted&&r.updated_at>su);
+ if(!(lu>su)&&!remoteNew)return false;
+ let rem=null;if(r&&!r.deleted){const d=await sapi('/rest/v1/somo_maps?select=data&id=eq.'+encodeURIComponent(rid));if(d&&d[0]&&d[0].data){try{rem=JSON.parse(d[0].data);rem.c=rem.c||{};rem.lg=rem.lg||[]}catch(_){rem=null}}}
+ if(!loc&&!rem)return false;
+ const mg=pgMerge(loc,rem),chLocal=pgDiff(loc,mg),chRemote=pgDiff(rem,mg);
+ if(chLocal){pgSet(m.key,mg);if(m.id===CUR)pgApplyDoc(mg)}
+ let up=(r&&r.updated_at)||0;
+ if(chRemote||(!rem&&(Object.keys(mg.c).length||mg.lg.length))){up=Date.now();await sapi(UP,{method:'POST',headers:PF,body:JSON.stringify({id:rid,name:'',data:JSON.stringify(mg),deleted:false,updated_at:up})})}
+ m.pgsu=Math.max(up,mg.u||0);return chLocal||chRemote}
+function saveStudy(){if(window.__encLock)return;try{pgWrite(KEY)}catch(_){}try{syncSoon()}catch(_){}}
+function save(){if(window.__encLock)return;try{persist(KEY,JSON.stringify(S,pgStrip));pgWrite(KEY)}catch(e){$('#hint').textContent='Bộ nhớ trình duyệt đầy: ảnh quá nặng sẽ không được lưu lại.'}}
 function apply(){world.style.transform=`translate(${S.v.x}px,${S.v.y}px) scale(${S.v.k})`}
 function bgApply(){$('#bgi').style.backgroundImage=S.bg?`url(${S.bg})`:'none';$('#bgi').style.opacity=S.op;$('#op').value=S.op}
 function edges(){ed.innerHTML=S.nodes.map(n=>{const p=byId(n.p);if(!p)return'';const m=(p.x+n.x)/2;if(S.es==='none')return'';return`<path d="${ep(p,n)}" fill="none" stroke="${n.c}" stroke-width="3.5" stroke-linecap="round" opacity=".85"/>`}).join('')}
@@ -403,7 +440,7 @@ addEventListener('pointermove',e=>{if(!drag)return;const{n,el}=drag;n.x=drag.ox+
 addEventListener('pointerup',()=>{if(drag){drag=null;save()}});
 /* kéo nền + chụm thu phóng */
 const P=new Map();
-vp.addEventListener('pointerdown',e=>{P.set(e.pointerId,[e.clientX,e.clientY]);try{vp.setPointerCapture(e.pointerId)}catch(_){}if(P.size>1)drag=null});
+vp.addEventListener('pointerdown',e=>{/* V22.3: bấm nút trên cột công cụ thì không bắt con trỏ, để chuột bấm được */if(e.target.closest&&e.target.closest('.zb,#hint,#zx,#pcap,button,input,textarea,select,a'))return;P.set(e.pointerId,[e.clientX,e.clientY]);try{vp.setPointerCapture(e.pointerId)}catch(_){}if(P.size>1)drag=null});
 vp.addEventListener('pointermove',e=>{const o=P.get(e.pointerId);if(!o||(drag&&P.size<2))return;
 if(P.size===1){S.v.x+=e.clientX-o[0];S.v.y+=e.clientY-o[1]}
 else if(P.size===2){const ids=[...P.keys()],a=P.get(ids[0]),b=P.get(ids[1]),d0=Math.hypot(a[0]-b[0],a[1]-b[1]);P.set(e.pointerId,[e.clientX,e.clientY]);const a2=P.get(ids[0]),b2=P.get(ids[1]),d1=Math.hypot(a2[0]-b2[0],a2[1]-b2[1]);if(d0>0)zoomAt((a2[0]+b2[0])/2,(a2[1]+b2[1])/2,d1/d0)}
@@ -439,7 +476,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{const p=$('#
 const IM=new Map(),RV=new Map();let hist=[snap()],fut=[],lt=0;let _st=0;const _save0=save,_save=()=>_save0(),_sd=()=>{clearTimeout(_st);_st=setTimeout(_save0,350)};
 save=function(){const j=snap(),t=Date.now();if(j!==hist[hist.length-1]){fut=[];if(t-lt<600&&hist.length>1)hist[hist.length-1]=j;else{hist.push(j);if(hist.length>40)hist.shift()}lt=t}_sd()};
 function snap(){return JSON.stringify({n:S.nodes,r:S.rels,b:S.bnd,s:S.sum,th:S.thm,es:S.es,ly:S.ly,f:S.fnt,ax:S.ax},(k,v)=>{if(k==='i'&&typeof v==='string'){if(!IM.has(v)){const id='§'+IM.size;IM.set(v,id);RV.set(id,v)}return IM.get(v)}return v})}
-function gotoH(j){const o=JSON.parse(j,(k,v)=>k==='i'&&RV.has(v)?RV.get(v):v);S.nodes=o.n;S.rels=o.r||[];S.bnd=o.b||[];S.sum=o.s||[];S.es=o.es;S.ly=o.ly;S.fnt=o.f;S.ax=o.ax;theme(o.th||'Mặc định');if(!byId(sel))sel=S.nodes[0].id;render();pick(sel);_save()}
+function gotoH(j){const o=JSON.parse(j,(k,v)=>k==='i'&&RV.has(v)?RV.get(v):v);S.nodes=o.n;pgReapply();S.rels=o.r||[];S.bnd=o.b||[];S.sum=o.s||[];S.es=o.es;S.ly=o.ly;S.fnt=o.f;S.ax=o.ax;theme(o.th||'Mặc định');if(!byId(sel))sel=S.nodes[0].id;render();pick(sel);_save()}
 function undo(){if(hist.length<2)return;fut.push(hist.pop());gotoH(hist[hist.length-1])}
 function redo(){if(!fut.length)return;const j=fut.pop();hist.push(j);gotoH(j)}
 $('#undo').onclick=undo;
@@ -654,12 +691,58 @@ const d=document.createElement('input');d.type='date';d.value=n.dl||'';d.onchang
 const k=T.filter(n=>n.done).length;$('#tgp').textContent=k+'/'+T.length+' việc xong ('+Math.round(100*k/T.length)+'%)'};
 $('#t1').onclick=()=>{T.sort((a,b)=>R[a.pr||'']-R[b.pr||'']);draw()};$('#t2').onclick=()=>{T.sort((a,b)=>(a.dl||'9')<(b.dl||'9')?-1:1);draw()};draw()};
 /* ôn tập thông minh: thẻ ghi nhớ, trắc nghiệm, lặp lại ngắt quãng */
-const DAYS=[0,1,2,4,8,16],cards=()=>S.nodes.filter(n=>kidsOf(n.id).length);
-function runFlash(q){const lb=$('#lb');let i=0,ok=0;const step=()=>{if(i>=q.length){lb.innerHTML='<p><b>Xong!</b> Nhớ '+ok+'/'+q.length+'. Nút quên được viền đỏ trên sơ đồ.</p>';render();pick(sel);save();return}
-const n=q[i],p=byId(n.p);lb.innerHTML='<div class="cd"><small>'+(p?'Thuộc: '+esc(p.t):'Nút gốc')+' · thẻ '+(i+1)+'/'+q.length+'</small><h3>«'+esc(n.t)+'» gồm những gì?</h3><div id="ans" hidden><ul>'+kidsOf(n.id).map(k=>'<li>'+esc(k.t)+'</li>').join('')+'</ul></div></div><div class="pr"><button id="sh">Hiện đáp án</button><button id="fg" hidden>Quên</button><button id="rm" hidden>Nhớ</button></div>';
-$('#sh').onclick=()=>{$('#ans').hidden=false;$('#sh').hidden=true;$('#fg').hidden=false;$('#rm').hidden=false};
-const fin=g=>{const b=g?Math.min(5,(n.box||0)+1):0;n.box=b;n.due=Date.now()+DAYS[b]*864e5;n.wrong=!g;if(g)ok++;lg(g,'fc');i++;step()};$('#fg').onclick=()=>fin(false);$('#rm').onclick=()=>fin(true)};step()}
-function runQuiz(){const C=shuf(cards()).slice(0,10),lb=$('#lb');let i=0,ok=0;const step=()=>{if(i>=C.length){lb.innerHTML='<p><b>Kết quả: '+ok+'/'+C.length+'.</b> Câu sai được viền đỏ trên sơ đồ.</p>';render();pick(sel);save();return}
+const DAYS=[0,1,2,4,8,16];let studyRoot=null;
+/* V23: ôn theo nhánh, chấm 4 mức, vuốt/phím tắt, số thẻ đến hạn */
+function subIds(id){const s=new Set([id]);let ch=true;while(ch){ch=false;for(const n of S.nodes)if(n.p!=null&&s.has(n.p)&&!s.has(n.id)){s.add(n.id);ch=true}}return s}
+/* V24: thẻ tự đặt – "Câu hỏi :: đáp án" hoặc "… {{từ cần nhớ}} …" (dùng được cả cho nút lá) */
+function custom(n){const t=String(n.t||''),i=t.indexOf('::');
+ if(i>0){const q=t.slice(0,i).trim(),a=t.slice(i+2).trim();if(q&&a)return{kind:'qa',q,a}}
+ if(/\{\{[^{}]+\}\}/.test(t))return{kind:'cz',t};
+ return null}
+const scopeSet=()=>(studyRoot!=null&&byId(studyRoot))?subIds(studyRoot):null;
+const cards=()=>{const sc=scopeSet();return S.nodes.filter(n=>kidsOf(n.id).length&&!custom(n)&&(!sc||sc.has(n.id)))};
+const customCards=()=>{const sc=scopeSet();return S.nodes.filter(n=>custom(n)&&(!sc||sc.has(n.id)))};
+const allCards=()=>S.nodes.filter(n=>custom(n)||kidsOf(n.id).length);
+function faceHtml(n){const c=custom(n);
+ if(c&&c.kind==='qa')return '<h3>'+esc(c.q)+'</h3><div id="ans" hidden><p>'+esc(c.a)+'</p></div>';
+ if(c&&c.kind==='cz'){const parts=c.t.split(/(\{\{[^{}]+\}\})/),isB=s=>/^\{\{[^{}]+\}\}$/.test(s);
+  const front=parts.map(s=>isB(s)?'<span style="border-bottom:2px solid #2f7f6f;padding:0 1em">…</span>':esc(s)).join(''),back=parts.map(s=>isB(s)?'<b style="color:#2f7f6f">'+esc(s.slice(2,-2))+'</b>':esc(s)).join('');
+  return '<h3 id="cf" style="font-weight:600">'+front+'</h3><div id="ans" hidden><p>'+back+'</p></div>'}
+ return '<h3>«'+esc(n.t)+'» gồm những gì?</h3><div id="ans" hidden><ul>'+kidsOf(n.id).map(k=>'<li>'+esc(k.t)+'</li>').join('')+'</ul></div>'}
+let fcH=null;function fcUnbind(){if(fcH)document.removeEventListener('keydown',fcH);fcH=null}
+function fcBind(h){fcUnbind();fcH=h;document.addEventListener('keydown',fcH)}
+(()=>{const s=document.createElement('style');s.textContent='#ans.flip{animation:fcflip .28s ease-out;transform-origin:top}@keyframes fcflip{from{transform:rotateX(80deg);opacity:0}to{transform:none;opacity:1}}@media(prefers-reduced-motion:reduce){#ans.flip{animation:none}}#gr button{flex:1 1 70px}#gr [data-k="0"]{background:#d1495b;color:#fff;border-color:#d1495b}#gr [data-k="3"]{background:#2f7f6f;color:#fff;border-color:#2f7f6f}#fcd{cursor:pointer;user-select:none}';document.head.appendChild(s)})();
+function runFlash(q){const lb=$('#lb');q=q.slice();const tot=q.length,first=new Set(),again=new Set();let i=0,ok=0;
+ const done=()=>{fcUnbind();lb.innerHTML='<p><b>Xong!</b> Nhớ '+ok+'/'+tot+' thẻ ngay lần đầu. Nút quên được viền đỏ trên sơ đồ.</p>';render();pick(sel);saveStudy();updDue()};
+ const step=()=>{if(i>=q.length)return done();
+  const n=q[i],p=byId(n.p);
+  lb.innerHTML='<div class="cd" id="fcd" style="touch-action:pan-y"><small>'+(p?'Thuộc: '+esc(p.t):'Nút gốc')+' · thẻ '+(i+1)+'/'+q.length+'</small>'+faceHtml(n)+'<small id="fch" style="opacity:.7">Chạm thẻ hoặc bấm Space để xem đáp án</small></div><div class="pr"><button id="sh">Hiện đáp án</button></div><div class="pr" id="gr" hidden><button data-k="0">Quên (1)</button><button data-k="1">Khó (2)</button><button data-k="2">Nhớ (3)</button><button data-k="3">Dễ (4)</button></div>';
+  let shown=false;
+  const show=()=>{if(shown||!$('#ans'))return;shown=true;const a=$('#ans');a.hidden=false;a.classList.add('flip');const cf=$('#cf');if(cf)cf.hidden=true;$('#sh').hidden=true;$('#gr').hidden=false;$('#fch').textContent='Vuốt phải = Nhớ · vuốt trái = Quên · phím 1–4'};
+  const gradeIt=k=>{if(!shown)return;shown=false;
+   const b0=n.box||0;let b;
+   if(k===0){b=0;n.due=Date.now()}
+   else if(k===1){b=Math.max(1,b0);n.due=Date.now()+Math.max(1,DAYS[b]/2)*864e5}
+   else if(k===2){b=Math.min(5,b0+1);n.due=Date.now()+DAYS[b]*864e5}
+   else{b=Math.min(5,b0+2);n.due=Date.now()+DAYS[b]*864e5}
+   n.box=b;n.wrong=k===0;
+   if(!first.has(n.id)){first.add(n.id);if(k>0)ok++}
+   lg(k>0,'fc');saveStudy();
+   if(k===0&&!again.has(n.id)){again.add(n.id);q.push(n)}
+   i++;step()};
+  $('#sh').onclick=show;$('#fcd').addEventListener('click',show);
+  lb.querySelectorAll('[data-k]').forEach(bt=>bt.onclick=()=>gradeIt(+bt.dataset.k));
+  let x0=null,y0=0;const c=$('#fcd');
+  c.addEventListener('touchstart',e=>{const tc=e.touches[0];x0=tc.clientX;y0=tc.clientY},{passive:true});
+  c.addEventListener('touchend',e=>{if(x0==null)return;const tc=e.changedTouches[0],dx=tc.clientX-x0,dy=tc.clientY-y0;x0=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5){if(!shown)show();else gradeIt(dx>0?2:0)}},{passive:true});
+  fcBind(e=>{if(!document.body.contains(lb)||!lb.querySelector('#fcd')){fcUnbind();return}
+   const tg=e.target&&e.target.tagName;if(tg==='INPUT'||tg==='TEXTAREA'||tg==='SELECT')return;
+   if(e.key===' '){if(!shown){e.preventDefault();show()}}
+   else if(shown&&(e.key==='1'||e.key==='2'||e.key==='3'||e.key==='4'))gradeIt(+e.key-1);
+   else if(shown&&e.key==='ArrowLeft')gradeIt(0);
+   else if(shown&&e.key==='ArrowRight')gradeIt(2)})};
+ step()}
+function runQuiz(){const C=shuf(cards()).slice(0,10),lb=$('#lb');let i=0,ok=0;const step=()=>{if(i>=C.length){lb.innerHTML='<p><b>Kết quả: '+ok+'/'+C.length+'.</b> Câu sai được viền đỏ trên sơ đồ.</p>';render();pick(sel);saveStudy();return}
 const n=C[i],ks=kidsOf(n.id),good=ks[Math.floor(Math.random()*ks.length)],bad=shuf(S.nodes.filter(x=>x.id!==n.id&&x.p!==n.id&&!ks.some(k=>k.t===x.t))).slice(0,3);
 if(!bad.length){lb.textContent='Cần thêm nút khác để tạo câu trắc nghiệm.';return}
 const O=shuf([good,...bad]);lb.innerHTML='<small>Câu '+(i+1)+'/'+C.length+'</small><h3>Nhánh nào thuộc «'+esc(n.t)+'»?</h3><div class="pr" id="op2" style="flex-direction:column">'+O.map((o,j)=>'<button data-j="'+j+'">'+esc(o.t)+'</button>').join('')+'</div><div class="pr"><button id="nx" hidden>Tiếp</button></div>';
@@ -670,7 +753,7 @@ const now=Date.now(),due=all.filter(n=>!n.due||n.due<=now),wr=all.filter(n=>n.wr
 panel('<h3 style="margin:0 0 4px">Ôn tập thông minh</h3><p style="margin:0 0 6px;opacity:.8">'+all.length+' thẻ tạo từ sơ đồ · '+due.length+' đến hạn · '+wr.length+' đang sai. Thẻ nhớ được nhắc lại sau 1, 2, 4, 8, 16 ngày.</p><div class="pr"><button id="l1">Thẻ ghi nhớ</button><button id="l2">Trắc nghiệm</button><button id="l3">Ôn nút sai</button><button id="l4">Xóa dấu sai</button></div><div id="lb" style="margin-top:12px"></div>');
 $('#l1').onclick=()=>runFlash(shuf(due.length?due:all));$('#l2').onclick=runQuiz;
 $('#l3').onclick=()=>wr.length?runFlash(shuf(wr)):($('#lb').textContent='Không có nút nào đang sai.');
-$('#l4').onclick=()=>{all.forEach(n=>n.wrong=false);render();pick(sel);save();$('#lb').textContent='Đã xóa dấu sai.'}};
+$('#l4').onclick=()=>{all.forEach(n=>n.wrong=false);render();pick(sel);saveStudy();$('#lb').textContent='Đã xóa dấu sai.'}};
 render();pick(sel);
 
 /* ===== v7: chọn nhiều, ẩn, thay thế, quan hệ, viền nhóm, bố cục, chi tiết, lịch, Gantt, giao diện ===== */
@@ -838,7 +921,7 @@ function addVer(nm){const a=vers();a.unshift({t:Date.now(),nm,n:S.nodes.length,d
 const _s8=save;save=function(){_s8();if(Date.now()-lv>6e5&&S.nodes.length>1){lv=Date.now();addVer('Tự động')}};
 function verPanel(){const a=vers();panel('<h3 style="margin:0 0 8px">Lịch sử phiên bản</h3><p style="margin:0 0 8px;opacity:.8">App tự lưu một phiên bản sau mỗi 10 phút chỉnh sửa (tối đa 12). Khôi phục sẽ lưu trạng thái hiện tại trước.</p><div id="vl"></div>');const box=$('#vl');if(!a.length){box.textContent='Chưa có phiên bản nào.';return}
 a.forEach((v,i)=>{const r=document.createElement('div');r.className='tr';const s=document.createElement('span');s.className='tt';s.textContent=new Date(v.t).toLocaleString('vi-VN')+' · '+v.nm+' · '+v.n+' nút';
-const b=document.createElement('button');b.textContent='Khôi phục';b.onclick=()=>{if(!b.dataset.ok){b.dataset.ok=1;b.textContent='Bấm lại để chắc chắn';return}addVer('Trước khi khôi phục');const d=JSON.parse(v.d);S.nodes=d.nodes;S.rels=d.rels||[];S.bnd=d.bnd||[];S.es=d.es;S.ly=d.ly;S.fnt=d.fnt;nid=Math.max(nid,...S.nodes.map(n=>n.id));sel=R().id;theme(d.thm||'Mặc định');center();render();pick(sel);save();pn.classList.remove('on');toast('Đã khôi phục phiên bản.')};
+const b=document.createElement('button');b.textContent='Khôi phục';b.onclick=()=>{if(!b.dataset.ok){b.dataset.ok=1;b.textContent='Bấm lại để chắc chắn';return}addVer('Trước khi khôi phục');const d=JSON.parse(v.d);S.nodes=d.nodes;pgReapply();S.rels=d.rels||[];S.bnd=d.bnd||[];S.es=d.es;S.ly=d.ly;S.fnt=d.fnt;nid=Math.max(nid,...S.nodes.map(n=>n.id));sel=R().id;theme(d.thm||'Mặc định');center();render();pick(sel);save();pn.classList.remove('on');toast('Đã khôi phục phiên bản.')};
 const x=document.createElement('button');x.textContent='Xóa';x.onclick=()=>{const l=vers();l.splice(i,1);try{VC=l;persist(VKf(),JSON.stringify(l))}catch(_){}verPanel()};r.append(s,b,x);box.appendChild(r)})}
 /* --- cử chỉ: bấm đúp sửa, nhấn giữ mở menu nút, 3 ngón hoàn tác --- */
 function editN(id){const el=nd.querySelector('.node[data-id="'+id+'"]');if(!el)return;const n=byId(id),s=el.lastElementChild;s.setAttribute('contenteditable','true');s.focus();getSelection().selectAllChildren(s);const t0=Date.now();
@@ -872,7 +955,7 @@ pbx.addEventListener('change',e=>{if(e.target.id==='imf'&&e.target.files[0]){con
 lock();setTimeout(remindToast,1200);
 
 /* ===== v9 ===== */
-S.sum=S.sum||[];let relLabel='';
+S.sum=S.sum||[];if(!window.__encLock)pgLoad(KEY,S);let relLabel='';
 /* --- lưu trữ và mã hóa --- */
 function persist(k,v){if(window.__encLock)return;if(window.__ek)encW(k,v);else localStorage.setItem(k,v)}
 const b64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode(...u.subarray(i,i+8192));return btoa(s)},ub64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
@@ -889,7 +972,7 @@ if(!window.__encLock){if(!LIB.some(m=>m.key===KEY)){LIB.push({id:'m'+Date.now().
 else{CUR=localStorage.getItem(CK)||''}
 function focusNode(id){const n=byId(id);if(!n)return;let p=byId(n.p);while(p){p.col=false;p.hid=false;p=byId(p.p)}n.hid=false;sel=id;render();pick(id);const r=vp.getBoundingClientRect();S.v.x=r.width/2-n.x*S.v.k;S.v.y=r.height/2-n.y*S.v.k;apply()}
 async function openMap(id,nodeId,nf){const m=LIB.find(x=>x.id===id);if(!m)return;if(!nf)await flush();const d=await readKey(m.key);KEY=m.key;CUR=id;try{localStorage.setItem(CK,id)}catch(_){}
-S=d&&d.nodes&&d.nodes.length?d:{nodes:[{id:1,p:null,x:0,y:0,t:m.name,c:COL[0],f:'pill'}],bg:null,op:.5,v:null};S.rels=S.rels||[];S.bnd=S.bnd||[];S.sum=S.sum||[];nid=Math.max(...S.nodes.map(n=>n.id));sel=R().id;ms.clear();hist=[snap()];fut=[];
+S=d&&d.nodes&&d.nodes.length?d:{nodes:[{id:1,p:null,x:0,y:0,t:m.name,c:COL[0],f:'pill'}],bg:null,op:.5,v:null};S.rels=S.rels||[];S.bnd=S.bnd||[];S.sum=S.sum||[];pgLoad(m.key,S);nid=Math.max(...S.nodes.map(n=>n.id));sel=R().id;ms.clear();hist=[snap()];fut=[];
 VC=window.__ek?(await readKey(VKf())||[]):null;lv=(vers()[0]||{}).t||0;nd.style.setProperty('--fs',S.fs||1);bgApply();theme(S.thm||'Mặc định');if(!S.v)center();else apply();render();pick(sel);if(nodeId)focusNode(nodeId)}
 async function newMap(name,data){const id='m'+Date.now().toString(36)+Math.floor(Math.random()*99),key='somo-map-'+id;await flush();
 const d=data||{nodes:[{id:1,p:null,x:0,y:0,t:name,c:COL[0],f:'pill'}],bg:null,op:.5,v:null};persist(key,JSON.stringify(d));await encQ;LIB.push({id,name,key,c:1});libSet(LIB);await openMap(id)}
@@ -1019,12 +1102,17 @@ function readImg2(f,m,cb){if(f.type==='image/gif'&&f.size<6e5){const r=new FileR
 /* --- ôn tập mở rộng --- */
 const lg=(ok,m)=>{(S.lg=S.lg||[]).push({t:Date.now(),ok:ok?1:0,m});if(S.lg.length>500)S.lg.splice(0,S.lg.length-500)};
 const give=(n,g)=>{n.box=g?Math.min(5,(n.box||0)+1):0;n.due=Date.now()+DAYS[n.box]*864e5;n.wrong=!g};
-function learnPanel(){const all=cards();if(!all.length){toast('Cần ít nhất một nút có nhánh con để ôn tập.');return}const now=Date.now(),due=all.filter(n=>!n.due||n.due<=now),wr=all.filter(n=>n.wrong);
-panel('<h3 style="margin:0 0 4px">Ôn tập thông minh</h3><p style="margin:0 0 6px;opacity:.8">'+all.length+' thẻ · '+due.length+' đến hạn · '+wr.length+' đang sai. Thẻ nhớ được nhắc lại sau 1, 2, 4, 8, 16 ngày.</p><div class="pr"><button id="l1">Thẻ ghi nhớ</button><button id="l2">Trắc nghiệm</button><button id="l5">Đúng/Sai</button><button id="l6">Điền từ</button><button id="l7">Nối cặp</button><button id="l8">Câu hỏi mở</button><button id="l10">Tình huống</button><button id="l3">Ôn nút sai</button><button id="l9">Thống kê</button><button id="l4">Xóa dấu sai</button></div><div id="lb" style="margin-top:12px"></div>');
-$('#l1').onclick=()=>runFlash(shuf(due.length?due:all));$('#l2').onclick=runQuiz;$('#l5').onclick=runTF;$('#l6').onclick=runCl;$('#l7').onclick=runMt;$('#l8').onclick=runOp;$('#l9').onclick=runStat;$('#l10').onclick=runScn;
-$('#l3').onclick=()=>wr.length?runFlash(shuf(wr)):($('#lb').textContent='Không có nút nào đang sai.');$('#l4').onclick=()=>{all.forEach(n=>n.wrong=false);render();pick(sel);save();$('#lb').textContent='Đã xóa dấu sai.'}}
-$('#ln').onclick=learnPanel;
-function fin(lb,ok,tot){render();pick(sel);save();lb.innerHTML='<p><b>Kết quả: '+ok+'/'+tot+'.</b> Nút làm sai được viền đỏ trên sơ đồ.</p>'}
+function scopeHtml(){const r=(studyRoot!=null)?byId(studyRoot):null,sn=byId(sel),act='style="outline:3px solid #2f7f6f"';
+ return '<div class="pr" id="scp"><button id="sc0" '+(r?'':act)+'>Cả sơ đồ</button><button id="sc1" '+(r?act:'')+'>'+(r?'Đang ôn nhánh «'+esc(r.t.slice(0,22))+'»':'Chỉ nhánh đang chọn'+(sn?' «'+esc(sn.t.slice(0,22))+'»':''))+'</button></div>'}
+function learnPanel(){const all=cards().concat(customCards());if(!all.length){toast('Cần ít nhất một nút có nhánh con, hoặc nút dạng «Câu hỏi :: đáp án», để ôn tập.');return}const now=Date.now(),due=all.filter(n=>!n.due||n.due<=now),wr=all.filter(n=>n.wrong);
+panel('<h3 style="margin:0 0 4px">Ôn tập thông minh</h3><p style="margin:0 0 6px;opacity:.8">'+all.length+' thẻ · '+due.length+' đến hạn · '+wr.length+' đang sai. Thẻ nhớ được nhắc lại sau 1, 2, 4, 8, 16 ngày.<br><small>Mẹo: viết trong nút «Câu hỏi :: đáp án» hoặc «… {{từ cần nhớ}} …» để tạo thẻ riêng, kể cả nút lá. Thẻ tự đặt dùng cho “Thẻ ghi nhớ”.</small></p>'+scopeHtml()+'<div class="pr"><button id="l1">Thẻ ghi nhớ</button><button id="l2">Trắc nghiệm</button><button id="l5">Đúng/Sai</button><button id="l6">Điền từ</button><button id="l7">Nối cặp</button><button id="l8">Câu hỏi mở</button><button id="l10">Tình huống</button><button id="l3">Ôn nút sai</button><button id="l9">Thống kê</button><button id="l4">Xóa dấu sai</button></div><div id="lb" style="margin-top:12px"></div>');
+$('#sc0').onclick=()=>{studyRoot=null;learnPanel()};$('#sc1').onclick=()=>{const keep=studyRoot;studyRoot=sel;if(!cards().length&&!customCards().length){studyRoot=keep;toast('Nhánh này chưa có nút nào có nhánh con để ôn.');return}learnPanel()};
+$('#l1').onclick=()=>runFlash(shuf(due.length?due:all));const needS=f=>()=>{if(!cards().length){$('#lb').textContent='Dạng bài này cần nút có nhánh con. Thẻ tự đặt chỉ dùng cho “Thẻ ghi nhớ”.';return}f()};$('#l2').onclick=needS(runQuiz);$('#l5').onclick=needS(runTF);$('#l6').onclick=needS(runCl);$('#l7').onclick=runMt;$('#l8').onclick=needS(runOp);$('#l9').onclick=runStat;$('#l10').onclick=runScn;
+$('#l3').onclick=()=>wr.length?runFlash(shuf(wr)):($('#lb').textContent='Không có nút nào đang sai.');$('#l4').onclick=()=>{all.forEach(n=>n.wrong=false);render();pick(sel);saveStudy();$('#lb').textContent='Đã xóa dấu sai.'}}
+$('#ln').onclick=()=>{studyRoot=null;learnPanel()};
+function updDue(){try{const b=$('#ln');if(!b)return;const now=Date.now(),c=allCards().filter(n=>n.due&&n.due<=now).length;b.textContent='Ôn tập thông minh'+(c?' · '+c+' đến hạn':'')}catch(_){}}
+setTimeout(()=>{updDue();try{const now=Date.now(),c=allCards().filter(n=>n.due&&n.due<=now).length;if(c)toast('Hôm nay có '+c+' thẻ đến hạn ôn tập.')}catch(_){}},3000);setInterval(updDue,60000);
+function fin(lb,ok,tot){updDue();render();pick(sel);saveStudy();lb.innerHTML='<p><b>Kết quả: '+ok+'/'+tot+'.</b> Nút làm sai được viền đỏ trên sơ đồ.</p>'}
 function runTF(){const C=shuf(cards()).slice(0,10),lb=$('#lb');let i=0,ok=0;const step=()=>{if(i>=C.length)return fin(lb,ok,C.length);const n=C[i],ks=kidsOf(n.id),tr=Math.random()<.5,bad=shuf(S.nodes.filter(x=>x.id!==n.id&&x.p!==n.id&&!ks.some(k=>k.t===x.t)));if(!tr&&!bad.length){i++;return step()}
 const sh=tr?ks[Math.floor(Math.random()*ks.length)]:bad[0];lb.innerHTML='<small>Câu '+(i+1)+'/'+C.length+'</small><h3>«'+esc(sh.t)+'» thuộc «'+esc(n.t)+'»?</h3><div class="pr"><button data-v="1">Đúng</button><button data-v="0">Sai</button></div><div id="rs"></div>';
 lb.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{const g=(b.dataset.v==='1')===tr;if(g)ok++;lg(g,'tf');give(n,g);$('#rs').innerHTML='<p style="color:'+(g?'#2f7f6f':'#d1495b')+'">'+(g?'Chính xác.':'Chưa đúng.')+'</p><div class="pr"><button id="nx2">Tiếp</button></div>';$('#nx2').onclick=()=>{i++;step()};lb.querySelectorAll('[data-v]').forEach(x=>x.disabled=true)})};step()}
@@ -1035,7 +1123,7 @@ function runMt(){const lb=$('#lb'),seen=new Set(),P=shuf(S.nodes.filter(n=>n.p!=
 const R2=shuf(P.map(n=>byId(n.p))),L2=shuf(P);let pickL=null,miss=0,done=0;lb.innerHTML='<h3>Nối mỗi nút với nhánh cha của nó</h3><div style="display:flex;gap:10px"><div id="mL" style="flex:1;display:flex;flex-direction:column;gap:8px"></div><div id="mR" style="flex:1;display:flex;flex-direction:column;gap:8px"></div></div><p id="mm"></p>';
 const bt=(p,t,f)=>{const b=document.createElement('button');b.textContent=t;b.onclick=()=>f(b);p.appendChild(b);return b};const first={};
 L2.forEach(n=>{bt($('#mL'),n.t,b=>{if(b.disabled)return;$('#mL').querySelectorAll('button').forEach(x=>x.style.outline='');b.style.outline='3px solid #2f7f6f';pickL={n,b}})});
-R2.forEach(p=>{bt($('#mR'),p.t,b=>{if(!pickL||b.disabled)return;if(pickL.n.p===p.id){pickL.b.disabled=b.disabled=true;pickL.b.style.background=b.style.background='#2f7f6f';pickL.b.style.color=b.style.color='#fff';pickL.b.style.outline='';if(!first[pickL.n.id])lg(true,'mt');done++;pickL=null;if(done===P.length){$('#mm').textContent='Xong! Số lần nối sai: '+miss;P.forEach(n=>give(byId(n.p),!first[n.id]));render();pick(sel);save()}}else{miss++;first[pickL.n.id]=1;lg(false,'mt');b.style.background='#d1495b';setTimeout(()=>b.style.background='',500)}})})}
+R2.forEach(p=>{bt($('#mR'),p.t,b=>{if(!pickL||b.disabled)return;if(pickL.n.p===p.id){pickL.b.disabled=b.disabled=true;pickL.b.style.background=b.style.background='#2f7f6f';pickL.b.style.color=b.style.color='#fff';pickL.b.style.outline='';if(!first[pickL.n.id])lg(true,'mt');done++;pickL=null;if(done===P.length){$('#mm').textContent='Xong! Số lần nối sai: '+miss;P.forEach(n=>give(byId(n.p),!first[n.id]));render();pick(sel);saveStudy()}}else{miss++;first[pickL.n.id]=1;lg(false,'mt');b.style.background='#d1495b';setTimeout(()=>b.style.background='',500)}})})}
 function runOp(){const C=shuf(cards()).slice(0,8),lb=$('#lb');let i=0,ok=0;const step=()=>{if(i>=C.length)return fin(lb,ok,C.length);const n=C[i];lb.innerHTML='<small>Câu '+(i+1)+'/'+C.length+'</small><h3>«'+esc(n.t)+'» gồm những gì?</h3><textarea id="oa" style="min-height:70px" placeholder="Tự trả lời trước khi xem đáp án"></textarea><div class="pr"><button id="ob">Xem đáp án</button></div><div id="rs"></div>';
 $('#ob').onclick=()=>{$('#ob').hidden=true;$('#rs').innerHTML='<ul>'+kidsOf(n.id).map(k=>'<li>'+esc(k.t)+'</li>').join('')+'</ul><div class="pr"><button data-g="1">Đúng</button><button data-g="0.5">Gần đúng</button><button data-g="0">Sai</button></div>';
 $('#rs').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{const v=+b.dataset.g;if(v===1)ok++;lg(v>0,'op');give(n,v>0);i++;step()})}};step()}
@@ -1048,7 +1136,7 @@ function scen(){const out=[];S.nodes.forEach(p=>{const m={};kidsOf(p.id).forEach
 function runScn(){const L=scen(),lb=$('#lb');if(!L.length){lb.innerHTML='Chưa có cấu trúc "đọc tâm". Hãy tạo từ mẫu <b>Đọc tâm</b> (Công cụ → Tạo từ mẫu): mỗi kiểu người có các nhánh Họ muốn gì, Họ sợ gì, Vì sao họ làm vậy, Khi bị đe dọa, Nói với họ thế nào.';return}
 const s=L[Math.floor(Math.random()*L.length)],ks=Object.keys(s.m),use=s.m.doa&&s.m.noi?['doa','noi']:shuf(ks).slice(0,2),q=s.m.doa&&s.m.noi?'Bạn đang nói chuyện với một người kiểu «'+esc(s.p.t)+'» và họ đang bị đe dọa. Họ sẽ phản ứng ra sao, và bạn nên nói gì?':'Với người kiểu «'+esc(s.p.t)+'»: hãy trả lời '+use.map(k=>'«'+esc(s.m[k].t)+'»').join(' và ')+'.';
 lb.innerHTML='<div class="cd"><small>Tình huống thực tế</small><h3>'+q+'</h3><div id="ans" hidden>'+use.map(k=>'<b>'+esc(s.m[k].t)+'</b><ul>'+kidsOf(s.m[k].id).map(c=>'<li>'+esc(c.t)+'</li>').join('')+'</ul>').join('')+'</div></div><div class="pr"><button id="sh">Hiện đáp án</button><button id="fg" hidden>Chưa nhớ</button><button id="rm" hidden>Nhớ</button></div>';
-$('#sh').onclick=()=>{$('#ans').hidden=false;$('#sh').hidden=true;$('#fg').hidden=false;$('#rm').hidden=false};const f2=g=>{use.forEach(k=>give(s.m[k],g));lg(g,'op');render();pick(sel);save();runScn()};$('#fg').onclick=()=>f2(false);$('#rm').onclick=()=>f2(true)}
+$('#sh').onclick=()=>{$('#ans').hidden=false;$('#sh').hidden=true;$('#fg').hidden=false;$('#rm').hidden=false};const f2=g=>{use.forEach(k=>give(s.m[k],g));lg(g,'op');render();pick(sel);saveStudy();runScn()};$('#fg').onclick=()=>f2(false);$('#rm').onclick=()=>f2(true)}
 /* --- mã hóa bằng mật khẩu --- */
 const lk3=document.createElement('div');lk3.id='lk3';lk3.innerHTML='<h2 style="margin:0">Dữ liệu đã được mã hóa</h2><p style="margin:0;opacity:.75">Nhập mật khẩu để mở sơ đồ</p><input id="k1" type="password" autocomplete="off" placeholder="Mật khẩu"><button id="k2">Mở</button><p id="k3" style="margin:0;color:#d1495b;min-height:1.3em"></p><button id="k4" style="background:#d1495b">Quên mật khẩu: xóa hết dữ liệu</button>';document.body.appendChild(lk3);
 if(window.__encLock)lk3.classList.add('on');
@@ -1075,8 +1163,8 @@ const SK='somo-sync',TK='somo-tomb';
 const syn=()=>{try{return JSON.parse(localStorage.getItem(SK))||{}}catch(_){return{}}},synSet=o=>{try{localStorage.setItem(SK,JSON.stringify(o))}catch(_){}},tombs=()=>{try{return JSON.parse(localStorage.getItem(TK))||[]}catch(_){return[]}};
 function tomb(id){const t=tombs();t.push({id,u:Date.now()});try{localStorage.setItem(TK,JSON.stringify(t))}catch(_){}}
 /* V21: chuẩn hóa URL/key, tránh lỗi dán thừa ký tự */
-function cleanUrl(u){u=String(u||'').trim().replace(/\s+/g,'');if(!u)return'';if(!/^https?:\/\//i.test(u))u='https://'+u;return u.replace(/\/(rest|auth)\/v1.*$/i,'').replace(/\/+$/,'')}
-function cleanKey(k){return String(k||'').replace(/\s+/g,'').replace(/^["']|["']$/g,'')}
+function cleanUrl(u){u=String(u||'').trim().replace(/\s+/g,'');if(!u)return'';const m=u.match(/https?:\/\/[^\s"'=]+/i);if(m)u=m[0];else u=u.replace(/^[A-Za-z_][A-Za-z0-9_]*=/,'');if(!/^https?:\/\//i.test(u))u='https://'+u;return u.replace(/\/(rest|auth)\/v1.*$/i,'').replace(/\/+$/,'')}
+function cleanKey(k){return String(k||'').replace(/\s+/g,'').replace(/^[A-Za-z_][A-Za-z0-9_]*=/,'').replace(/^["']|["']$/g,'')}
 function b64d(s){s=String(s).replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return atob(s)}
 function jwtExp(t){try{return JSON.parse(b64d(t.split('.')[1])).exp*1000}catch(_){return 0}}
 function sLogout(){const d=syn();delete d.token;delete d.refresh;delete d.uid;synSet(d);updCloudBtn()}
@@ -1104,9 +1192,10 @@ async function googleLogin(){
  if(cfg&&cfg.external&&cfg.external.google===false)throw Error('Google CHƯA được bật trong Supabase: vào Authentication > Providers > Google, bật Enable và nhập Client ID/Secret.');
  const raw=crypto.getRandomValues(new Uint8Array(32)),ver=b64url(raw),hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ver)),challenge=b64url(new Uint8Array(hash));
  try{localStorage.setItem(OAUTH_V,ver)}catch(_){throw Error('Trình duyệt đang chặn lưu dữ liệu (chế độ riêng tư?). Hãy mở bằng chế độ thường.')}
- const redirect=location.origin+location.pathname;
+ const redirect=appRedirect();
  location.href=base+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirect)+'&code_challenge='+encodeURIComponent(challenge)+'&code_challenge_method=s256';
 }
+function appRedirect(){return location.origin+location.pathname.replace(/index\.html$/i,'')}
 function cleanAuthUrl(){history.replaceState({},document.title,location.pathname)}
 async function finishGoogleLogin(){
  const q=new URLSearchParams(location.search),hq=new URLSearchParams(location.hash.replace(/^#/,'')),code=q.get('code');
@@ -1132,24 +1221,27 @@ async function finishGoogleLogin(){
 async function srefresh(){const d=await sapi('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:syn().refresh})},false);if(!d||!d.access_token)throw Error('refresh');synSet({...syn(),token:d.access_token,refresh:d.refresh_token||syn().refresh})}
 const UP='/rest/v1/somo_maps?on_conflict=owner,id',PF={Prefer:'resolution=merge-duplicates,return=minimal'};
 let syncing=false,synT=null;
-function dropMap(m){localStorage.removeItem(m.key);localStorage.removeItem(m.key+'-ver');LIB=LIB.filter(x=>x.id!==m.id)}
+function dropMap(m){localStorage.removeItem(m.key);localStorage.removeItem(m.key+'-ver');localStorage.removeItem(m.key+'-pg');LIB=LIB.filter(x=>x.id!==m.id)}
+/* V22.2: lần đồng bộ đầu tự gửi cả sơ đồ cũ đã có nội dung (nhiều hơn 1 nút, hoặc sơ đồ đã khóa) */
+function hasContent(m){try{const raw=localStorage.getItem(m.key);if(!raw)return false;if(raw.startsWith('ENC1:'))return true;const d=JSON.parse(raw);return !!(d&&d.nodes&&d.nodes.length>1)}catch(_){return false}}
 async function syncAll(quiet){const c=syn();if(!c.token){if(!quiet)toast('Hãy đăng nhập đồng bộ trước.');return}if(syncing)return;syncing=true;let pu=0,pl=0,dl=0,re=false;
 try{await flush();LIB=libGet();const rem=await sapi('/rest/v1/somo_maps?select=id,name,updated_at,deleted'),R2=new Map(rem.map(x=>[x.id,x]));
 for(const t of tombs()){const r=R2.get(t.id);if(!r||!r.deleted)await sapi(UP,{method:'POST',headers:PF,body:JSON.stringify({id:t.id,name:'',data:'',deleted:true,updated_at:t.u})})}localStorage.removeItem(TK);
 for(const m of [...LIB]){const r=R2.get(m.id),u=m.u||0,su=m.su||0;
 if(r&&r.deleted&&u<=su){dropMap(m);dl++;if(m.id===CUR)re='del';continue}
-if((!r&&(m.c||m.u))||(r&&!r.deleted&&u>su&&u>=r.updated_at)){const raw=localStorage.getItem(m.key);if(raw==null)continue;const up=u||Date.now();await sapi(UP,{method:'POST',headers:PF,body:JSON.stringify({id:m.id,name:m.name,data:raw,deleted:false,updated_at:up})});m.u=m.su=up;pu++}
+if((!r&&(m.c||m.u||hasContent(m)))||(r&&!r.deleted&&u>su&&u>=r.updated_at)){const raw=localStorage.getItem(m.key);if(raw==null)continue;const up=u||Date.now();await sapi(UP,{method:'POST',headers:PF,body:JSON.stringify({id:m.id,name:m.name,data:raw,deleted:false,updated_at:up})});m.u=m.su=up;pu++}
 else if(r&&!r.deleted&&r.updated_at>su&&r.updated_at>u){const d=await sapi('/rest/v1/somo_maps?select=data,name&id=eq.'+encodeURIComponent(m.id));if(d&&d[0]){if(m.id===CUR)addVer('Trước khi đồng bộ');const dd=d[0].data;if(dd.startsWith('ENC1:'))localStorage.setItem(m.key,dd);else persist(m.key,dd);m.name=d[0].name||m.name;m.u=m.su=r.updated_at;pl++;if(m.id===CUR)re=re||true}}}
-for(const r of rem){if(r.deleted||LIB.some(m=>m.id===r.id))continue;const d=await sapi('/rest/v1/somo_maps?select=data,name&id=eq.'+encodeURIComponent(r.id));if(d&&d[0]){const key='somo-map-'+r.id,dd=d[0].data;if(dd.startsWith('ENC1:'))localStorage.setItem(key,dd);else persist(key,dd);LIB.push({id:r.id,name:d[0].name||'Sơ đồ',key,u:r.updated_at,su:r.updated_at,c:1});pl++}}
+for(const r of rem){if(r.deleted||String(r.id).startsWith('pg:')||LIB.some(m=>m.id===r.id))continue;const d=await sapi('/rest/v1/somo_maps?select=data,name&id=eq.'+encodeURIComponent(r.id));if(d&&d[0]){const key='somo-map-'+r.id,dd=d[0].data;if(dd.startsWith('ENC1:'))localStorage.setItem(key,dd);else persist(key,dd);LIB.push({id:r.id,name:d[0].name||'Sơ đồ',key,u:r.updated_at,su:r.updated_at,c:1});pl++}}
 const un=LIB.find(m=>!m.u&&!m.c&&!m.su);if(un&&LIB.length>1){if(un.id===CUR)re='del';dropMap(un)}
-await encQ;libSet(LIB);if(re==='del')await openMap(LIB[0].id,null,true);else if(re)await openMap(CUR,null,true);synSet({...syn(),last:Date.now()});updCloudBtn();if(!quiet||pu||pl||dl)toast('Đồng bộ xong: gửi '+pu+', nhận '+pl+', xóa '+dl+'.')}
+let pgn=0;for(const m of LIB){if(await syncPg(m,R2))pgn++}
+await encQ;libSet(LIB);if(re==='del')await openMap(LIB[0].id,null,true);else if(re)await openMap(CUR,null,true);synSet({...syn(),last:Date.now()});updCloudBtn();if(!quiet||pu||pl||dl||pgn)toast('Đồng bộ xong: gửi '+pu+', nhận '+pl+', xóa '+dl+(pgn?' · tiến độ ôn tập '+pgn:'')+'.')}
 catch(e){toast('Đồng bộ lỗi: '+e.message)}finally{syncing=false}}
 function syncSoon(){const c=syn();if(!c.token||!c.auto)return;clearTimeout(synT);synT=setTimeout(()=>syncAll(true),8000)}
 const _s10=save;save=function(){_s10();if(!window.__encLock){const m=LIB.find(x=>x.id===CUR);if(m){m.u=Date.now();libSet(LIB)}}syncSoon()};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&syn().auto)syncAll(true)});
 function synPanel(){const c=syn();panel('<h3 style="margin:0 0 6px">Đồng bộ đám mây</h3><p style="margin:0 0 8px;opacity:.8">Bước 1: dán Project URL và anon public key của Supabase vào hai ô bên dưới. Bước 2: bấm Đăng nhập bằng Google/Gmail. Nút Google chỉ hoạt động sau khi cấu hình Google Provider trong Supabase.</p><input id="sy1" placeholder="Project URL (https://xxxx.supabase.co)" style="width:100%"><input id="sy2" placeholder="Khóa anon public" style="width:100%;margin-top:8px"><div class="pr"><button id="syGoogle" style="flex:1 1 100%;background:#2f7f6f;color:white;border-color:#2f7f6f">Đăng nhập bằng Google / Gmail</button></div><p style="margin:7px 0 2px;opacity:.7;font-size:12px">Hoặc dùng email và mật khẩu riêng của ứng dụng:</p><div class="pr"><input id="sy3" type="email" placeholder="Email" style="flex:1 1 150px"><input id="sy4" type="password" placeholder="Mật khẩu ứng dụng" style="flex:1 1 150px"></div><div class="pr"><button id="sy5">Đăng nhập email</button><button id="sy6">Đăng ký email</button><button id="sy7">Đăng xuất</button></div><label style="display:block;margin-top:10px"><input type="checkbox" id="sy8"> Tự đồng bộ khi chỉnh sửa và khi mở app</label><div class="pr"><button id="sy9">Đồng bộ ngay</button></div><p id="syst" style="opacity:.85"></p><p id="syhelp" style="opacity:.7;font-size:12px;word-break:break-all"></p>');
 $('#sy1').value=c.url||'';$('#sy2').value=c.key||'';$('#sy3').value=c.email||'';$('#sy8').checked=!!c.auto;const st=()=>{const d=syn();$('#syst').textContent=d.token?'Đã đăng nhập: '+d.email+(d.last?' · đồng bộ lần cuối '+new Date(d.last).toLocaleString('vi-VN'):''):'Chưa đăng nhập.'};st();
-const showHelp=()=>{const u=cleanUrl($('#sy1').value);$('#syhelp').innerHTML='Khai báo trong Supabase (URL Configuration, cả Site URL và Redirect URLs):<br><b>'+location.origin+location.pathname+'</b>'+(u?'<br>Google Cloud, Authorized redirect URI:<br><b>'+u+'/auth/v1/callback</b>':'')+'<br>Phiên bản app: V22'};showHelp();$('#sy1').addEventListener('input',showHelp);
+const showHelp=()=>{const u=cleanUrl($('#sy1').value);$('#syhelp').innerHTML='Khai báo trong Supabase (URL Configuration, cả Site URL và Redirect URLs):<br><b>'+appRedirect()+'</b>'+(u?'<br>Google Cloud, Authorized redirect URI:<br><b>'+u+'/auth/v1/callback</b>':'')+'<br>Phiên bản app: V25'};showHelp();$('#sy1').addEventListener('input',showHelp);
 const save2=()=>{const u=cleanUrl($('#sy1').value),k=cleanKey($('#sy2').value);$('#sy1').value=u;$('#sy2').value=k;synSet({...syn(),url:u,key:k,auto:$('#sy8').checked})};
 const go=async k=>{save2();try{const ok=await sauth(k,$('#sy3').value.trim(),$('#sy4').value);$('#syst').textContent=ok?'Thành công.':'Đăng ký xong. Hãy xác nhận email rồi đăng nhập (hoặc tắt "Confirm email" trong Supabase).';if(ok){st();syncAll()}}catch(e){$('#syst').textContent=e.message}};
 $('#syGoogle').onclick=async()=>{save2();$('#syst').textContent='Đang kiểm tra Supabase…';try{await googleLogin()}catch(e){$('#syst').textContent=e.message;toast(e.message);if(!syn().url)$('#sy1').focus();else if(!syn().key)$('#sy2').focus()}};
